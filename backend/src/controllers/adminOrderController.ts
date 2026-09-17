@@ -4,6 +4,7 @@ import { Product } from '../models/Product';
 import { HttpError } from '../lib/httpError';
 import { toSafeJson } from '../lib/sanitize';
 import { canTransition } from '../lib/orderStatus';
+import { notifyOrderStatusChange } from '../lib/notify';
 
 export async function listAllOrders(req: Request, res: Response) {
   const { status, vendorId, customerId, page: pageRaw, limit: limitRaw } = req.query as Record<string, string | undefined>;
@@ -52,6 +53,8 @@ export async function updateOrderStatusAsAdmin(req: Request, res: Response) {
   }
   if (nextStatus === 'delivered') order.deliveredAt = now;
   await order.save();
+
+  await notifyOrderStatusChange(order.customerId, order._id, order.orderNumber, nextStatus, req.body.note);
 
   res.json(toSafeJson(order));
 }

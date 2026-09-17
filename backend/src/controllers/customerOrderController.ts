@@ -9,6 +9,7 @@ import { HttpError } from '../lib/httpError';
 import { toSafeJson } from '../lib/sanitize';
 import { evaluateCoupon, computeOrderPricing, findVariant, priceLine } from '../lib/pricing';
 import { CANCELLABLE_STATUSES } from '../lib/orderStatus';
+import { notifyCustomer, notifyOrderStatusChange } from '../lib/notify';
 
 function generateOrderNumber(): string {
   const year = new Date().getFullYear();
@@ -155,6 +156,14 @@ export async function createOrder(req: Request, res: Response) {
   cart.couponCode = undefined;
   await cart.save();
 
+  await notifyCustomer(
+    customerId,
+    'order',
+    'Order placed',
+    `Your order #${order.orderNumber} has been placed successfully.`,
+    order._id,
+  );
+
   res.status(201).json(toSafeJson(order));
 }
 
@@ -186,6 +195,8 @@ export async function cancelOrder(req: Request, res: Response) {
   order.cancelledBy = 'customer';
   order.statusHistory.push({ status: 'cancelled', at: now, note: req.body.reason });
   await order.save();
+
+  await notifyOrderStatusChange(order.customerId, order._id, order.orderNumber, 'cancelled', req.body.reason);
 
   res.json(toSafeJson(order));
 }
