@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { Badge, Button, IconCircle, ScreenContainer, StatusTimeline } from '../../components';
+import type { BadgeTone } from '../../components/Badge';
 import { Icon } from '../../icons/Icon';
 import { useRegistration } from '../../context/RegistrationContext';
 import { api, getApiErrorMessage } from '../../services/api';
@@ -10,23 +11,75 @@ import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'KYCPending'>;
 
-const TIMELINE_STEPS = [
-  { label: 'Application Submitted', sublabel: '12 Sep 2024, 14:32 IST', status: 'done' as const },
-  { label: 'Document Verification', sublabel: 'In progress — est. 24 hours', status: 'active' as const },
-  { label: 'Background Check', sublabel: 'Est. 1 business day', status: 'pending' as const },
-  { label: 'Account Activation', sublabel: 'Upon approval', status: 'pending' as const },
-];
+type StepReviewStatus = 'pending' | 'verified' | 'rejected';
 
-const DOCUMENTS: { label: string; tone: 'success' | 'warning' }[] = [
-  { label: 'GST Certificate', tone: 'warning' },
-  { label: 'PAN Card', tone: 'success' },
-  { label: 'Trade License', tone: 'warning' },
-  { label: 'Bank Details', tone: 'success' },
-];
+interface StepReview {
+  status: StepReviewStatus;
+  note?: string;
+}
+
+const STEP_LABELS: Record<string, string> = {
+  businessType: 'Business Type',
+  businessInfo: 'Business Information',
+  ownerInfo: 'Owner Information',
+  storeInfo: 'Store Information',
+  gstDetails: 'GST Details',
+  panDetails: 'PAN Verification',
+  businessProof: 'Business Proof',
+  bankDetails: 'Bank Details',
+};
+
+const STEP_ORDER = Object.keys(STEP_LABELS);
+
+const REVIEW_TONE: Record<StepReviewStatus, BadgeTone> = {
+  pending: 'warning',
+  verified: 'success',
+  rejected: 'error',
+};
+
+const REVIEW_LABEL: Record<StepReviewStatus, string> = {
+  pending: 'Under Review',
+  verified: 'Verified',
+  rejected: 'Issue Found',
+};
 
 export function KYCPendingScreen({ navigation }: Props) {
   const { data } = useRegistration();
   const [checking, setChecking] = useState(false);
+  const [submittedSteps, setSubmittedSteps] = useState<string[]>([]);
+  const [stepReviews, setStepReviews] = useState<Partial<Record<string, StepReview>>>({});
+
+  const loadStepStatus = useCallback(async () => {
+    try {
+      const { data: registration } = await api.get<Record<string, unknown>>('/vendor/registration');
+      setSubmittedSteps(STEP_ORDER.filter((key) => registration[key] != null));
+      setStepReviews((registration.stepReviews as Partial<Record<string, StepReview>>) ?? {});
+    } catch {
+      // Best-effort — the screen still works with the timeline/refresh button if this fails.
+    }
+  }, []);
+
+  useEffect(() => {
+    loadStepStatus();
+  }, [loadStepStatus]);
+
+  const documents = submittedSteps.map((key) => ({
+    label: STEP_LABELS[key],
+    review: stepReviews[key]?.status ?? 'pending',
+    note: stepReviews[key]?.note,
+  }));
+  const verifiedCount = documents.filter((d) => d.review === 'verified').length;
+  const allVerified = documents.length > 0 && verifiedCount === documents.length;
+
+  const timelineSteps = [
+    { label: 'Application Submitted', sublabel: `Reference ${data.referenceId ?? '—'}`, status: 'done' as const },
+    {
+      label: 'Document Verification',
+      sublabel: allVerified ? 'All steps verified' : `${verifiedCount}/${documents.length} steps verified`,
+      status: allVerified ? ('done' as const) : ('active' as const),
+    },
+    { label: 'Final Decision', sublabel: 'Admin approval or rejection', status: 'pending' as const },
+  ];
 
   async function handleRefresh() {
     setChecking(true);
@@ -42,10 +95,10 @@ export function KYCPendingScreen({ navigation }: Props) {
         navigation.replace('KYCApproved');
       } else if (status.status === 'rejected') {
         navigation.replace('KYCRejected', { rejectionReason: status.rejectionReason ?? undefined });
+      } else {
+        // Otherwise still pending (or suspended) — refresh the per-step checklist and stay.
+        await loadStepStatus();
       }
-      // Otherwise still pending (or suspended) — stay on this screen. An admin has to
-      // approve the application via the admin panel, so during local testing this will
-      // typically remain "pending".
     } catch (error) {
       Alert.alert('Could not refresh status', getApiErrorMessage(error, 'Please try again.'));
     } finally {
@@ -102,24 +155,31 @@ export function KYCPendingScreen({ navigation }: Props) {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Progress</Text>
           <View style={styles.timelineWrapper}>
-            <StatusTimeline steps={TIMELINE_STEPS} />
+            <StatusTimeline steps={timelineSteps} />
           </View>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Documents Status</Text>
-          <View style={styles.documentsList}>
-            {DOCUMENTS.map((doc, index) => (
-              <View
-                key={doc.label}
-                style={[styles.documentRow, index < DOCUMENTS.length - 1 && styles.documentRowDivider]}
-              >
-                <Text style={styles.documentLabel}>{doc.label}</Text>
-                <Badge label={doc.tone === 'success' ? 'Verified' : 'Under Review'} tone={doc.tone} />
-              </View>
-            ))}
+        {documents.length > 0 ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Step-by-Step Status</Text>
+            <View style={styles.documentsList}>
+              {documents.map((doc, index) => (
+                <View
+                  key={doc.label}
+                  style={[styles.documentRow, index < documents.length - 1 && styles.documentRowDivider]}
+                >
+                  <View style={styles.documentTextColumn}>
+                    <Text style={styles.documentLabel}>{doc.label}</Text>
+                    {doc.review === 'rejected' && doc.note ? (
+                      <Text style={styles.documentNote}>{doc.note}</Text>
+                    ) : null}
+                  </View>
+                  <Badge label={REVIEW_LABEL[doc.review]} tone={REVIEW_TONE[doc.review]} />
+                </View>
+              ))}
+            </View>
           </View>
-        </View>
+        ) : null}
 
         <View style={styles.footer}>
           <Button
@@ -259,16 +319,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: spacing.md,
     paddingVertical: spacing.md,
   },
   documentRowDivider: {
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+  documentTextColumn: {
+    flex: 1,
+    gap: 2,
+  },
   documentLabel: {
     ...typography.label,
     fontFamily: fontFamilies.regular,
     color: colors.textPrimary,
+  },
+  documentNote: {
+    ...typography.caption,
+    color: colors.error,
   },
   footer: {
     gap: spacing.lg,

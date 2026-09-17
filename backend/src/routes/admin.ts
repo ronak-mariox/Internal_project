@@ -54,6 +54,27 @@ adminRouter.patch(
   asyncHandler(adminController.updateVendorStatus),
 );
 
+adminRouter.patch(
+  '/vendors/:id/steps/:stepKey',
+  authenticate,
+  authorize('admin'),
+  param('id').isString().notEmpty(),
+  param('stepKey').isIn([
+    'businessType',
+    'businessInfo',
+    'ownerInfo',
+    'storeInfo',
+    'gstDetails',
+    'panDetails',
+    'businessProof',
+    'bankDetails',
+  ]),
+  body('status').isIn(['pending', 'verified', 'rejected']),
+  body('note').optional({ values: 'falsy' }).isString(),
+  handleValidation,
+  asyncHandler(adminController.updateVendorStepReview),
+);
+
 adminRouter.get(
   '/drivers/pending',
   authenticate,

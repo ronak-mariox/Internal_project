@@ -169,6 +169,7 @@ export async function getRegistration(req: Request, res: Response) {
     bankDetails: vendor.bankDetails ?? null,
     referenceId: vendor.referenceId ?? null,
     nextStep: STEP_ORDER.find((s) => !vendor[s.field])?.key ?? null,
+    stepReviews: vendor.stepReviews ?? {},
   });
 }
 
@@ -185,6 +186,10 @@ export async function getStatus(req: Request, res: Response) {
     // to review/submit, or let them into the app, instead of ever defaulting to
     // "let them in" on an incomplete/unapproved account.
     nextStep: STEP_ORDER.find((s) => !vendor[s.field])?.key ?? null,
+    // Per-step admin review (verify/reject + note), set via the admin panel's
+    // verification checklist — lets the vendor app show real progress instead of
+    // a generic "under review" placeholder.
+    stepReviews: vendor.stepReviews ?? {},
   });
 }
 

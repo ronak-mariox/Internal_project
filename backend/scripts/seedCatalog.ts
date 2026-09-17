@@ -6,6 +6,10 @@ import { Category } from '../src/models/Category';
 import { Product } from '../src/models/Product';
 import { Coupon } from '../src/models/Coupon';
 
+declare const process: {
+  exitCode?: number;
+};
+
 /**
  * Dev-only convenience seed for the core-commerce domain (categories, an
  * approved demo vendor, products, a coupon) so the customer/vendor/admin apps

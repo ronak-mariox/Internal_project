@@ -1,43 +1,67 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { Button, IconCircle, InfoBanner, ScreenContainer } from '../../components';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 import { useRegistration } from '../../context/RegistrationContext';
+import { api } from '../../services/api';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'KYCRejected'>;
 
-const REASONS = [
-  {
-    title: 'GST Certificate',
-    action: 'Re-upload',
-    description: 'Document is expired (expired on 31 Mar 2023). Please upload a valid certificate.',
-    target: 'GSTDetails' as const,
-  },
-  {
-    title: 'Business Address',
-    action: 'Correct',
-    description: 'Pincode 400001 does not match city Mumbai. Please verify your address.',
-    target: 'BusinessInfo' as const,
-  },
-  {
-    title: 'Bank Account',
-    action: 'Correct',
-    description: "Account holder name (PRIYA SHARMA) doesn't match GST registered name (SHARMA ENTERPRISES).",
-    target: 'BankDetails' as const,
-  },
-];
+type EditTarget =
+  | 'BusinessType'
+  | 'BusinessInfo'
+  | 'OwnerInfo'
+  | 'StoreInfo'
+  | 'GSTDetails'
+  | 'PANVerification'
+  | 'BusinessProof'
+  | 'BankDetails';
 
-const FIX_STEPS = [
-  'Upload valid (unexpired) GST certificate',
-  'Verify and correct your business address',
-  'Ensure bank account holder name matches GST name',
-];
+const STEP_META: Record<string, { title: string; target: EditTarget }> = {
+  businessType: { title: 'Business Type', target: 'BusinessType' },
+  businessInfo: { title: 'Business Information', target: 'BusinessInfo' },
+  ownerInfo: { title: 'Owner Information', target: 'OwnerInfo' },
+  storeInfo: { title: 'Store Information', target: 'StoreInfo' },
+  gstDetails: { title: 'GST Details', target: 'GSTDetails' },
+  panDetails: { title: 'PAN Verification', target: 'PANVerification' },
+  businessProof: { title: 'Business Proof', target: 'BusinessProof' },
+  bankDetails: { title: 'Bank Details', target: 'BankDetails' },
+};
+
+interface RejectedStep {
+  key: string;
+  title: string;
+  description: string;
+  target: EditTarget;
+}
 
 export function KYCRejectedScreen({ navigation, route }: Props) {
   const { data } = useRegistration();
   const rejectionReason = route.params?.rejectionReason;
+  const [rejectedSteps, setRejectedSteps] = useState<RejectedStep[]>([]);
+
+  useEffect(() => {
+    api
+      .get<{ stepReviews?: Partial<Record<string, { status: string; note?: string }>> }>('/vendor/registration')
+      .then(({ data: registration }) => {
+        const reviews = registration.stepReviews ?? {};
+        setRejectedSteps(
+          Object.entries(reviews)
+            .filter(([, review]) => review?.status === 'rejected')
+            .map(([key, review]) => ({
+              key,
+              title: STEP_META[key]?.title ?? key,
+              description: review?.note || 'This step needs to be corrected.',
+              target: STEP_META[key]?.target ?? 'BusinessType',
+            })),
+        );
+      })
+      .catch(() => {
+        // Best-effort — falls back to the generic rejectionReason banner below.
+      });
+  }, []);
 
   return (
     <ScreenContainer scrollable>
@@ -68,41 +92,50 @@ export function KYCRejectedScreen({ navigation, route }: Props) {
             <Text style={styles.reasonsTitle}>Rejection Reason</Text>
             <Text style={styles.reasonDescription}>{rejectionReason}</Text>
           </View>
-        ) : (
+        ) : rejectedSteps.length > 0 ? (
           <View style={styles.reasonsCard}>
-            <Text style={styles.reasonsTitle}>Rejection Reasons ({REASONS.length})</Text>
-            {REASONS.map((reason, index) => (
+            <Text style={styles.reasonsTitle}>Rejection Reasons ({rejectedSteps.length})</Text>
+            {rejectedSteps.map((reason, index) => (
               <View
-                key={reason.title}
-                style={[styles.reasonRow, index < REASONS.length - 1 && styles.reasonRowDivider]}
+                key={reason.key}
+                style={[styles.reasonRow, index < rejectedSteps.length - 1 && styles.reasonRowDivider]}
               >
                 <View style={styles.reasonHeader}>
                   <Text style={styles.reasonTitle}>{reason.title}</Text>
                   <Pressable onPress={() => navigation.navigate(reason.target)} hitSlop={8}>
-                    <Text style={styles.reasonAction}>{reason.action}</Text>
+                    <Text style={styles.reasonAction}>Correct</Text>
                   </Pressable>
                 </View>
                 <Text style={styles.reasonDescription}>{reason.description}</Text>
               </View>
             ))}
           </View>
+        ) : (
+          <View style={styles.reasonsCard}>
+            <Text style={styles.reasonsTitle}>Rejection Reason</Text>
+            <Text style={styles.reasonDescription}>
+              Your application wasn't approved. Please contact support for details.
+            </Text>
+          </View>
         )}
 
-        <View style={styles.fixCard}>
-          <Text style={styles.fixTitle}>How to Fix</Text>
-          {FIX_STEPS.map((step, index) => (
-            <View key={step} style={styles.fixRow}>
-              <View style={styles.fixBadge}>
-                <Text style={styles.fixBadgeText}>{index + 1}</Text>
+        {rejectedSteps.length > 0 ? (
+          <View style={styles.fixCard}>
+            <Text style={styles.fixTitle}>How to Fix</Text>
+            {rejectedSteps.map((step, index) => (
+              <View key={step.key} style={styles.fixRow}>
+                <View style={styles.fixBadge}>
+                  <Text style={styles.fixBadgeText}>{index + 1}</Text>
+                </View>
+                <Text style={styles.fixText}>Correct your {step.title.toLowerCase()}</Text>
               </View>
-              <Text style={styles.fixText}>{step}</Text>
-            </View>
-          ))}
-        </View>
+            ))}
+          </View>
+        ) : null}
 
         <InfoBanner
           variant="info"
-          message="You have 2 resubmission attempts remaining. After correction, your application will be reviewed within 24 hours."
+          message="After correcting the issues above, resubmit your application for another review."
         />
 
         <View style={styles.footer}>

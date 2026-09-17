@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { Admin } from '../models/Admin';
-import { Vendor } from '../models/Vendor';
+import { Vendor, type RegistrationStepKey } from '../models/Vendor';
 import { Driver } from '../models/Driver';
 import { Customer } from '../models/Customer';
 import { Order } from '../models/Order';
@@ -45,6 +45,40 @@ export async function updateVendorStatus(req: Request, res: Response) {
     { new: true },
   );
   if (!vendor) throw new HttpError(404, 'Vendor not found');
+  res.json(toSafeJson(vendor, ['passwordHash']));
+}
+
+const REGISTRATION_STEP_KEYS: RegistrationStepKey[] = [
+  'businessType',
+  'businessInfo',
+  'ownerInfo',
+  'storeInfo',
+  'gstDetails',
+  'panDetails',
+  'businessProof',
+  'bankDetails',
+];
+
+/** Lets an admin verify/reject one registration step at a time (with a note),
+ * ahead of the final overall approve/reject via updateVendorStatus above. */
+export async function updateVendorStepReview(req: Request, res: Response) {
+  const stepKey = req.params.stepKey as RegistrationStepKey;
+  if (!REGISTRATION_STEP_KEYS.includes(stepKey)) {
+    throw new HttpError(400, `Unknown registration step: ${req.params.stepKey}`);
+  }
+
+  const vendor = await Vendor.findById(req.params.id);
+  if (!vendor) throw new HttpError(404, 'Vendor not found');
+
+  vendor.stepReviews = {
+    ...(vendor.stepReviews ?? {}),
+    [stepKey]: {
+      status: req.body.status,
+      note: req.body.note || undefined,
+      reviewedAt: new Date(),
+    },
+  };
+  await vendor.save();
   res.json(toSafeJson(vendor, ['passwordHash']));
 }
 

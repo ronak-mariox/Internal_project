@@ -26,6 +26,7 @@ import { Button } from '@/components/ui/Button';
 import { Tabs, type TabItem } from '@/components/ui/Tabs';
 import { Modal } from '@/components/ui/Drawer';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Field } from '@/components/ui/Input';
 import { InlineAlert } from '@/components/ui/InlineAlert';
 import { vendorSettlements } from '@/data/settlements';
 import type { KycStatus, Order, ProductStatus, Vendor, VendorStatus } from '@/types';
@@ -43,6 +44,7 @@ import {
   type ApiVendor as ApiVendorBase,
 } from '@/lib/adminOrders';
 import { avatarColorFor } from '@/lib/avatarColor';
+import { cn } from '@/lib/cn';
 
 const ROW_CAP = 15;
 
@@ -50,21 +52,147 @@ const ROW_CAP = 15;
 // Backend shapes
 // ---------------------------------------------------------------------------
 
+type StepReviewStatus = 'pending' | 'verified' | 'rejected';
+
+interface ApiStepReview {
+  status: StepReviewStatus;
+  note?: string;
+  reviewedAt?: string;
+}
+
+type RegistrationStepKey =
+  | 'businessType'
+  | 'businessInfo'
+  | 'ownerInfo'
+  | 'storeInfo'
+  | 'gstDetails'
+  | 'panDetails'
+  | 'businessProof'
+  | 'bankDetails';
+
 interface ApiVendor extends Omit<ApiVendorBase, 'businessInfo'> {
   email?: string;
   status: VendorStatus;
   kycStatus: KycStatus;
+  businessType?: string;
   businessInfo?: {
+    legalName?: string;
     displayName?: string;
     category?: string;
     addressLine1?: string;
     addressLine2?: string;
     city?: string;
+    pincode?: string;
   };
-  storeInfo?: { storeAddress?: string };
-  gstDetails?: { gstin?: string };
+  ownerInfo?: { fullName?: string; mobile?: string; email?: string; dob?: string; pan?: string };
+  storeInfo?: { storeName?: string; storeAddress?: string; contactNumber?: string; storeType?: string };
+  gstDetails?: { registered?: boolean; gstin?: string; businessName?: string; certificateUrl?: string };
+  panDetails?: { panNumber?: string; holderName?: string; documentUrl?: string };
+  businessProof?: { documentType?: string; documentNumber?: string; expiryDate?: string; frontUrl?: string };
+  bankDetails?: { accountHolderName?: string; accountNumber?: string; ifsc?: string; bankName?: string; branch?: string };
+  stepReviews?: Partial<Record<RegistrationStepKey, ApiStepReview>>;
   createdAt: string;
 }
+
+const STEP_DEFS: { key: RegistrationStepKey; title: string; rows: (v: ApiVendor) => { label: string; value: string }[] | null }[] = [
+  {
+    key: 'businessType',
+    title: 'Business Type',
+    rows: (v) => (v.businessType ? [{ label: 'Type', value: v.businessType }] : null),
+  },
+  {
+    key: 'businessInfo',
+    title: 'Business Information',
+    rows: (v) =>
+      v.businessInfo
+        ? [
+            { label: 'Legal Name', value: v.businessInfo.legalName ?? '—' },
+            { label: 'Display Name', value: v.businessInfo.displayName ?? '—' },
+            { label: 'Category', value: v.businessInfo.category ?? '—' },
+            {
+              label: 'Address',
+              value: [v.businessInfo.addressLine1, v.businessInfo.city, v.businessInfo.pincode].filter(Boolean).join(', ') || '—',
+            },
+          ]
+        : null,
+  },
+  {
+    key: 'ownerInfo',
+    title: 'Owner Information',
+    rows: (v) =>
+      v.ownerInfo
+        ? [
+            { label: 'Full Name', value: v.ownerInfo.fullName ?? '—' },
+            { label: 'Mobile', value: v.ownerInfo.mobile ?? '—' },
+            { label: 'Email', value: v.ownerInfo.email ?? '—' },
+            { label: 'PAN', value: v.ownerInfo.pan ?? '—' },
+          ]
+        : null,
+  },
+  {
+    key: 'storeInfo',
+    title: 'Store Information',
+    rows: (v) =>
+      v.storeInfo
+        ? [
+            { label: 'Store Name', value: v.storeInfo.storeName ?? '—' },
+            { label: 'Store Address', value: v.storeInfo.storeAddress ?? '—' },
+            { label: 'Contact', value: v.storeInfo.contactNumber ?? '—' },
+            { label: 'Type', value: v.storeInfo.storeType ?? '—' },
+          ]
+        : null,
+  },
+  {
+    key: 'gstDetails',
+    title: 'GST Details',
+    rows: (v) =>
+      v.gstDetails?.registered
+        ? [
+            { label: 'GSTIN', value: v.gstDetails.gstin ?? '—' },
+            { label: 'Business Name', value: v.gstDetails.businessName ?? '—' },
+            { label: 'Certificate', value: v.gstDetails.certificateUrl ? 'Uploaded' : 'Not uploaded' },
+          ]
+        : null,
+  },
+  {
+    key: 'panDetails',
+    title: 'PAN Verification',
+    rows: (v) =>
+      v.panDetails
+        ? [
+            { label: 'PAN Number', value: v.panDetails.panNumber ?? '—' },
+            { label: 'PAN Holder', value: v.panDetails.holderName ?? '—' },
+            { label: 'Document', value: v.panDetails.documentUrl ? 'Uploaded' : 'Not uploaded' },
+          ]
+        : null,
+  },
+  {
+    key: 'businessProof',
+    title: 'Business Proof',
+    rows: (v) =>
+      v.businessProof
+        ? [
+            { label: 'Document Type', value: v.businessProof.documentType ?? '—' },
+            { label: 'Number', value: v.businessProof.documentNumber ?? '—' },
+            { label: 'Valid Until', value: v.businessProof.expiryDate ?? '—' },
+            { label: 'Document', value: v.businessProof.frontUrl ? 'Uploaded' : 'Not uploaded' },
+          ]
+        : null,
+  },
+  {
+    key: 'bankDetails',
+    title: 'Bank Details',
+    rows: (v) =>
+      v.bankDetails
+        ? [
+            { label: 'Account Holder', value: v.bankDetails.accountHolderName ?? '—' },
+            { label: 'Account Number', value: v.bankDetails.accountNumber ? `•••• ${v.bankDetails.accountNumber.slice(-4)}` : '—' },
+            { label: 'IFSC', value: v.bankDetails.ifsc ?? '—' },
+            { label: 'Bank', value: [v.bankDetails.bankName, v.bankDetails.branch].filter(Boolean).join(' – ') || '—' },
+          ]
+        : null,
+  },
+];
 
 interface ApiProductVariant {
   mrp?: number;
@@ -169,6 +297,11 @@ export function VendorDetail() {
   const [activeTab, setActiveTab] = useState('products');
   const [suspendOpen, setSuspendOpen] = useState(false);
 
+  const [stepUpdating, setStepUpdating] = useState<RegistrationStepKey | null>(null);
+  const [stepError, setStepError] = useState<string | null>(null);
+  const [rejectStepKey, setRejectStepKey] = useState<RegistrationStepKey | null>(null);
+  const [rejectNote, setRejectNote] = useState('');
+
   useEffect(() => {
     if (!vendorId) return;
     let cancelled = false;
@@ -250,6 +383,22 @@ export function VendorDetail() {
   function confirmSuspend() {
     updateStatus('suspended');
     setSuspendOpen(false);
+  }
+
+  async function reviewStep(stepKey: RegistrationStepKey, status: StepReviewStatus, note?: string) {
+    if (!vendorId) return;
+    setStepError(null);
+    setStepUpdating(stepKey);
+    try {
+      const updated = await api.patch<ApiVendor>(`/admin/vendors/${vendorId}/steps/${stepKey}`, { status, note });
+      setVendorApi(updated);
+      setRejectStepKey(null);
+      setRejectNote('');
+    } catch (err) {
+      setStepError(errorMessage(err, 'Failed to update step review'));
+    } finally {
+      setStepUpdating(null);
+    }
   }
 
   const vendorPayouts = vendorSettlements.filter((s) => s.vendorId === vendorId);
@@ -362,6 +511,67 @@ export function VendorDetail() {
               </Button>
             )}
           </div>
+        </div>
+      </Card>
+
+      <Card className="mt-5">
+        <CardHeader
+          title="Verification checklist"
+          subtitle="Review each submitted step before approving or rejecting the application"
+        />
+        {stepError && <InlineAlert message={stepError} className="mx-5 mt-1" />}
+        <div className="divide-y divide-ink-100">
+          {STEP_DEFS.map((def) => {
+            const rows = def.rows(vendorApi!);
+            if (!rows) return null;
+            const review = vendorApi!.stepReviews?.[def.key];
+            const status: StepReviewStatus = review?.status ?? 'pending';
+            const busy = stepUpdating === def.key;
+            return (
+              <div key={def.key} className="px-5 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-ink-800">{def.title}</h3>
+                    <StatusBadge status={status} label={status === 'pending' ? 'Not reviewed' : undefined} />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      className="h-8! px-3! text-xs!"
+                      disabled={busy || status === 'verified'}
+                      onClick={() => reviewStep(def.key, 'verified')}
+                    >
+                      Verify
+                    </Button>
+                    <Button
+                      variant="danger"
+                      className="h-8! px-3! text-xs!"
+                      disabled={busy || status === 'rejected'}
+                      onClick={() => {
+                        setRejectStepKey(def.key);
+                        setRejectNote('');
+                      }}
+                    >
+                      Reject
+                    </Button>
+                  </div>
+                </div>
+                <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 text-[13px] sm:grid-cols-2">
+                  {rows.map((row) => (
+                    <div key={row.label} className="flex justify-between gap-3 sm:justify-start">
+                      <dt className="text-ink-400">{row.label}</dt>
+                      <dd className="text-ink-700">{row.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+                {review?.note && (
+                  <p className={cn('mt-2 rounded-lg px-3 py-2 text-[13px]', status === 'rejected' ? 'bg-danger-surface text-danger' : 'bg-ink-50 text-ink-600')}>
+                    {review.note}
+                  </p>
+                )}
+              </div>
+            );
+          })}
         </div>
       </Card>
 
@@ -528,6 +738,36 @@ export function VendorDetail() {
           {vendor.storeName} will be suspended immediately and removed from the storefront until reinstated. This
           action can be reversed later.
         </p>
+      </Modal>
+
+      <Modal
+        open={rejectStepKey !== null}
+        onClose={() => setRejectStepKey(null)}
+        title={`Reject "${STEP_DEFS.find((s) => s.key === rejectStepKey)?.title ?? ''}"`}
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setRejectStepKey(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              disabled={!rejectNote.trim() || stepUpdating !== null}
+              onClick={() => rejectStepKey && reviewStep(rejectStepKey, 'rejected', rejectNote.trim())}
+            >
+              Reject step
+            </Button>
+          </>
+        }
+      >
+        <Field label="Reason for rejection" hint="Shown to the vendor so they know what to fix.">
+          <textarea
+            value={rejectNote}
+            onChange={(e) => setRejectNote(e.target.value)}
+            rows={3}
+            placeholder="e.g. Bank account holder name doesn't match GST registered name"
+            className="w-full rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 text-sm text-ink-800 placeholder:text-ink-400 outline-none transition-colors focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+          />
+        </Field>
       </Modal>
     </div>
   );

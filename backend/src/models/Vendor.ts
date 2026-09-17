@@ -168,6 +168,24 @@ export interface TempClosureData {
   notifyCustomers: boolean;
 }
 
+export type RegistrationStepKey =
+  | 'businessType'
+  | 'businessInfo'
+  | 'ownerInfo'
+  | 'storeInfo'
+  | 'gstDetails'
+  | 'panDetails'
+  | 'businessProof'
+  | 'bankDetails';
+
+export type StepReviewStatus = 'pending' | 'verified' | 'rejected';
+
+export interface StepReview {
+  status: StepReviewStatus;
+  note?: string;
+  reviewedAt?: Date;
+}
+
 export interface VendorDoc {
   _id: unknown;
   phone: string;
@@ -189,6 +207,11 @@ export interface VendorDoc {
   panDetails?: PanDetailsData;
   businessProof?: BusinessProofData;
   bankDetails?: BankDetailsData;
+
+  /** Per-step admin review, keyed by the same step names as the fields above —
+   * lets an admin verify/reject individual registration steps (with a note) as
+   * they work through an application, ahead of the final overall approve/reject. */
+  stepReviews?: Partial<Record<RegistrationStepKey, StepReview>>;
 
   rejectionReason?: string;
 
@@ -232,6 +255,7 @@ const vendorSchema = new Schema<VendorDoc>(
     panDetails: { type: Schema.Types.Mixed },
     businessProof: { type: Schema.Types.Mixed },
     bankDetails: { type: Schema.Types.Mixed },
+    stepReviews: { type: Schema.Types.Mixed, default: {} },
 
     rejectionReason: String,
 
