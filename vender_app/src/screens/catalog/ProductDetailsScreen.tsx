@@ -1,11 +1,12 @@
 import React from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { Badge, BadgeTone } from '../../components';
 import { Icon } from '../../icons/Icon';
 import { useProductCatalog, ProductStatus } from '../../context/ProductCatalogContext';
+import { resolveAssetUrl } from '../../utils/resolveAssetUrl';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'ProductDetails'>;
@@ -50,7 +51,11 @@ export function ProductDetailsScreen({ navigation, route }: Props) {
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <ScrollView bounces={false}>
         <View style={styles.hero}>
-          <Icon name="package" size={72} color={colors.textTertiary} />
+          {product.images?.[0] ? (
+            <Image source={{ uri: resolveAssetUrl(product.images[0]) }} style={styles.heroImage} resizeMode="cover" />
+          ) : (
+            <Icon name="package" size={72} color={colors.textTertiary} />
+          )}
           <Pressable style={[styles.heroButton, styles.heroButtonLeft]} onPress={() => navigation.goBack()}>
             <Icon name="arrow-left" size={18} color={colors.textPrimary} />
           </Pressable>
@@ -188,6 +193,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  heroImage: {
+    width: '100%',
+    height: '100%',
   },
   heroButton: {
     position: 'absolute',

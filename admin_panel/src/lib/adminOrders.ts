@@ -3,6 +3,7 @@
 // record is turned into the admin panel's local Order type.
 import type { Order, OrderItem, OrderStatus, OrderStatusEvent } from '@/types';
 import { ApiError } from '@/lib/api';
+import { resolveAssetUrl } from '@/lib/asset';
 
 export interface ApiOrderItem {
   productId: string;
@@ -111,7 +112,7 @@ export function mapOrder(
   const items: OrderItem[] = o.items.map((item) => ({
     productId: item.productId,
     name: item.name,
-    image: item.imageUrl ?? '',
+    image: item.imageUrl ? resolveAssetUrl(item.imageUrl) : '',
     qty: item.quantity,
     price: item.price,
   }));

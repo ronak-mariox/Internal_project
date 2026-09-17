@@ -15,6 +15,7 @@ import {
   Store,
   Loader2,
   AlertTriangle,
+  ImageOff,
 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card, CardHeader } from '@/components/ui/Card';
@@ -44,6 +45,7 @@ import {
   type ApiVendor as ApiVendorBase,
 } from '@/lib/adminOrders';
 import { avatarColorFor } from '@/lib/avatarColor';
+import { resolveAssetUrl } from '@/lib/asset';
 import { cn } from '@/lib/cn';
 
 const ROW_CAP = 15;
@@ -245,7 +247,7 @@ function mapVendorProduct(p: ApiProduct, categoryNameById: Map<string, string>):
   return {
     id: p.id,
     name: p.name,
-    image: p.images[0] ?? '',
+    image: p.images[0] ? resolveAssetUrl(p.images[0]) : '',
     categoryName: categoryNameById.get(p.categoryId) ?? 'Uncategorised',
     sellingPrice: variant?.price ?? 0,
     stock,
@@ -631,7 +633,13 @@ export function VendorDetail() {
                   <Tr key={p.id}>
                     <Td>
                       <div className="flex items-center gap-3">
-                        <img src={p.image} alt={p.name} className="h-10 w-10 rounded-lg object-cover" />
+                        {p.image ? (
+                          <img src={p.image} alt={p.name} className="h-10 w-10 shrink-0 rounded-lg object-cover" />
+                        ) : (
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-ink-100 text-ink-300">
+                            <ImageOff size={16} />
+                          </div>
+                        )}
                         <div className="min-w-0">
                           <p className="truncate font-medium text-ink-800">{p.name}</p>
                         </div>

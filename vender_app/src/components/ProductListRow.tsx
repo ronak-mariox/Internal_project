@@ -1,8 +1,9 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Icon } from '../icons/Icon';
 import { Badge, BadgeTone } from './Badge';
 import { Product, ProductStatus } from '../context/ProductCatalogContext';
+import { resolveAssetUrl } from '../utils/resolveAssetUrl';
 import { colors, fontFamilies, radii, spacing, typography } from '../theme';
 
 const STATUS_META: Record<ProductStatus, { label: string; tone: BadgeTone }> = {
@@ -32,7 +33,11 @@ export function ProductListRow({ product, onPress, onMorePress }: Props) {
   return (
     <Pressable onPress={onPress} style={styles.row}>
       <View style={styles.thumb}>
-        <Icon name="package" size={22} color={colors.textTertiary} />
+        {product.images?.[0] ? (
+          <Image source={{ uri: resolveAssetUrl(product.images[0]) }} style={styles.thumbImage} resizeMode="cover" />
+        ) : (
+          <Icon name="package" size={22} color={colors.textTertiary} />
+        )}
       </View>
       <View style={styles.content}>
         <View style={styles.titleRow}>
@@ -93,6 +98,11 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  thumbImage: {
+    width: '100%',
+    height: '100%',
   },
   content: {
     flex: 1,

@@ -29,6 +29,7 @@ import type { Product, ProductStatus } from '@/types';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { cn } from '@/lib/cn';
 import { api, ApiError, fetchAllPaginated } from '@/lib/api';
+import { resolveAssetUrl } from '@/lib/asset';
 
 const PAGE_SIZE = 12;
 
@@ -132,7 +133,7 @@ function mapProduct(
     id: p.id,
     name: p.name,
     brand: p.brand ?? '—',
-    image: p.images[0] ?? '',
+    image: p.images[0] ? resolveAssetUrl(p.images[0]) : '',
     categoryId: p.categoryId,
     categoryName: categoryNameById.get(p.categoryId) ?? 'Uncategorised',
     subcategoryId: p.subcategoryId ?? '',

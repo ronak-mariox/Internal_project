@@ -1,6 +1,12 @@
 // In production this would come from an env var, e.g. import.meta.env.VITE_API_BASE_URL
 export const API_BASE_URL = 'http://localhost:4000/api';
 
+/** The backend's origin (no `/api` suffix) — for resolving relative asset URLs
+ * like `/uploads/xyz.jpg` (returned by upload endpoints) into a displayable URL.
+ * The admin panel is served from its own origin (the Vite dev server), so a bare
+ * relative path in an <img src> would otherwise resolve against THAT origin. */
+export const API_ORIGIN = API_BASE_URL.replace(/\/api$/, '');
+
 const ACCESS_TOKEN_KEY = 'admin_access_token';
 const REFRESH_TOKEN_KEY = 'admin_refresh_token';
 
