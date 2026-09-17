@@ -66,8 +66,8 @@ export function ReviewProductScreen({ navigation }: Props) {
           title="Images"
           onEdit={() => navigation.navigate('ProductImages')}
           rows={[
-            { label: 'Main Image', value: draft.images.mainImageAdded ? 'Added' : 'Not added' },
-            { label: 'Additional', value: `${draft.images.additionalImageCount} images added` },
+            { label: 'Main Image', value: draft.images.images[0] ? 'Added' : 'Not added' },
+            { label: 'Additional', value: `${Math.max(0, draft.images.images.length - 1)} images added` },
           ]}
         />
 

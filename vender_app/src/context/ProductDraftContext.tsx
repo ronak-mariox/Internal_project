@@ -10,8 +10,8 @@ export type BasicInfoData = {
 };
 
 export type ImagesData = {
-  mainImageAdded: boolean;
-  additionalImageCount: number;
+  /** Uploaded image URLs (relative backend paths), main image first. */
+  images: string[];
 };
 
 export type CategoryData = {
@@ -98,7 +98,7 @@ type ProductDraft = {
 };
 
 const INITIAL_DRAFT: ProductDraft = {
-  images: { mainImageAdded: false, additionalImageCount: 0 },
+  images: { images: [] },
   discount: { mode: 'percentage', value: '', limitedTimeOffer: false },
   availability: {
     onlineStore: true,
@@ -213,6 +213,7 @@ export function ProductDraftProvider({ children }: { children: React.ReactNode }
       description: draft.description?.fullDescription || draft.basicInfo?.shortDescription || undefined,
       brand: draft.basicInfo?.brand || undefined,
       unit: draft.packSize?.unit || undefined,
+      images: draft.images.images,
       variants,
       taxRate: parseFloat(draft.tax?.gstRate ?? '0') || 0,
       sku: draft.identifiers?.sku || undefined,

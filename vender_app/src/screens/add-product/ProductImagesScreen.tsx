@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { AddProductHeader, Button, ScreenContainer } from '../../components';
 import { Icon } from '../../icons/Icon';
 import { useProductDraft } from '../../context/ProductDraftContext';
+import { pickAndUploadProductImage } from '../../services/productImageUpload';
+import { getApiErrorMessage } from '../../services/api';
+import { resolveAssetUrl } from '../../utils/resolveAssetUrl';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'ProductImages'>;
@@ -20,20 +23,51 @@ const TIPS = [
 
 export function ProductImagesScreen({ navigation }: Props) {
   const { draft, updateImages } = useProductDraft();
-  const [mainImageAdded, setMainImageAdded] = useState(draft.images.mainImageAdded);
-  const [additionalCount, setAdditionalCount] = useState(draft.images.additionalImageCount);
+  const [images, setImages] = useState<string[]>(draft.images.images);
+  const [uploadingSlot, setUploadingSlot] = useState<'main' | 'additional' | null>(null);
   const [error, setError] = useState<string | undefined>();
 
+  const mainImage = images[0];
+  const additionalImages = images.slice(1, 1 + MAX_ADDITIONAL);
+
+  function choosePhotoSource(onPick: (source: 'camera' | 'gallery') => void) {
+    Alert.alert('Add Photo', 'Choose a source', [
+      { text: 'Camera', onPress: () => onPick('camera') },
+      { text: 'Gallery', onPress: () => onPick('gallery') },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }
+
+  async function uploadInto(source: 'camera' | 'gallery', slot: 'main' | 'additional') {
+    setUploadingSlot(slot);
+    try {
+      const url = await pickAndUploadProductImage(source);
+      if (!url) return;
+      setError(undefined);
+      setImages(prev => (slot === 'main' ? [url, ...prev.slice(1)] : [...prev, url]));
+    } catch (err) {
+      Alert.alert('Upload failed', getApiErrorMessage(err));
+    } finally {
+      setUploadingSlot(null);
+    }
+  }
+
+  function removeMain() {
+    setImages(prev => prev.slice(1));
+  }
+
+  function removeAdditional(index: number) {
+    setImages(prev => prev.filter((_, i) => i !== index + 1));
+  }
+
   function handleContinue() {
-    if (!mainImageAdded) {
+    if (!mainImage) {
       setError('Add a main product image to continue');
       return;
     }
-    updateImages({ mainImageAdded, additionalImageCount: additionalCount });
+    updateImages({ images });
     navigation.navigate('ProductCategoryStep');
   }
-
-  const additionalSlots = Array.from({ length: MAX_ADDITIONAL });
 
   return (
     <ScreenContainer backgroundColor={colors.surface}>
@@ -51,20 +85,16 @@ export function ProductImagesScreen({ navigation }: Props) {
         <View style={styles.blockGap}>
           <Text style={styles.sectionTitle}>Main Image</Text>
           <Pressable
-            style={[styles.mainDropzone, mainImageAdded && styles.mainDropzoneFilled]}
-            onPress={() => {
-              setMainImageAdded(true);
-              setError(undefined);
-            }}
+            style={[styles.mainDropzone, mainImage && styles.mainDropzoneFilled]}
+            disabled={uploadingSlot !== null}
+            onPress={() => choosePhotoSource(source => uploadInto(source, 'main'))}
           >
-            {mainImageAdded ? (
+            {uploadingSlot === 'main' ? (
+              <ActivityIndicator color={colors.primary} />
+            ) : mainImage ? (
               <>
-                <View style={styles.mainFilledPreview} />
-                <Pressable
-                  style={styles.removeMainButton}
-                  onPress={() => setMainImageAdded(false)}
-                  hitSlop={8}
-                >
+                <Image source={{ uri: resolveAssetUrl(mainImage) }} style={styles.mainFilledPreview} resizeMode="cover" />
+                <Pressable style={styles.removeMainButton} onPress={removeMain} hitSlop={8}>
                   <Icon name="x" size={11} color={colors.white} />
                 </Pressable>
               </>
@@ -83,35 +113,40 @@ export function ProductImagesScreen({ navigation }: Props) {
 
         <View style={styles.blockGap}>
           <View style={styles.additionalHeaderRow}>
-            <Text style={styles.sectionTitle}>Additional Images ({additionalCount}/{MAX_ADDITIONAL})</Text>
+            <Text style={styles.sectionTitle}>Additional Images ({additionalImages.length}/{MAX_ADDITIONAL})</Text>
             <Text style={styles.maxText}>Max {MAX_ADDITIONAL} images</Text>
           </View>
           <View style={styles.additionalGrid}>
-            {additionalSlots.map((_, index) => {
-              const filled = index < additionalCount;
+            {Array.from({ length: MAX_ADDITIONAL }).map((_, index) => {
+              const url = additionalImages[index];
+              const isNextEmptySlot = !url && index === additionalImages.length;
               return (
                 <Pressable
                   key={index}
-                  style={[styles.additionalSlot, filled ? styles.additionalSlotFilled : styles.additionalSlotEmpty]}
+                  style={[styles.additionalSlot, url ? styles.additionalSlotFilled : styles.additionalSlotEmpty]}
+                  disabled={uploadingSlot !== null || (!url && !isNextEmptySlot)}
                   onPress={() => {
-                    if (filled) {
-                      setAdditionalCount(count => count - 1);
-                    } else if (additionalCount < MAX_ADDITIONAL) {
-                      setAdditionalCount(count => count + 1);
+                    if (!url && isNextEmptySlot) {
+                      choosePhotoSource(source => uploadInto(source, 'additional'));
                     }
                   }}
                 >
-                  {filled ? (
-                    <Pressable
-                      style={styles.removeAdditionalButton}
-                      onPress={() => setAdditionalCount(count => count - 1)}
-                      hitSlop={8}
-                    >
-                      <Icon name="x" size={11} color={colors.white} />
-                    </Pressable>
-                  ) : (
+                  {uploadingSlot === 'additional' && isNextEmptySlot ? (
+                    <ActivityIndicator color={colors.primary} />
+                  ) : url ? (
+                    <>
+                      <Image source={{ uri: resolveAssetUrl(url) }} style={styles.additionalImage} resizeMode="cover" />
+                      <Pressable
+                        style={styles.removeAdditionalButton}
+                        onPress={() => removeAdditional(index)}
+                        hitSlop={8}
+                      >
+                        <Icon name="x" size={11} color={colors.white} />
+                      </Pressable>
+                    </>
+                  ) : isNextEmptySlot ? (
                     <Icon name="plus" size={22} color={colors.textTertiary} />
-                  )}
+                  ) : null}
                 </Pressable>
               );
             })}
@@ -129,7 +164,7 @@ export function ProductImagesScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.footer}>
-          <Button label="Continue" onPress={handleContinue} />
+          <Button label="Continue" onPress={handleContinue} disabled={uploadingSlot !== null} />
         </View>
       </ScrollView>
     </ScreenContainer>
@@ -194,7 +229,6 @@ const styles = StyleSheet.create({
   mainFilledPreview: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#D1D5DB',
   },
   removeMainButton: {
     position: 'absolute',
@@ -227,6 +261,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   additionalSlotEmpty: {
     backgroundColor: colors.surface,
@@ -238,6 +273,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#D1D5DB',
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  additionalImage: {
+    width: '100%',
+    height: '100%',
   },
   removeAdditionalButton: {
     position: 'absolute',

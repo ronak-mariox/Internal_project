@@ -12,6 +12,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
  */
 export const API_BASE_URL = 'http://localhost:4000/api';
 
+/** The backend's origin (no `/api` suffix) — for resolving relative asset URLs
+ * like `/uploads/xyz.jpg` (returned by upload endpoints) into a displayable URI. */
+export const API_ORIGIN = API_BASE_URL.replace(/\/api$/, '');
+
 export const ACCESS_TOKEN_KEY = 'vendor_access_token';
 export const REFRESH_TOKEN_KEY = 'vendor_refresh_token';
 

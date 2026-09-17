@@ -43,6 +43,7 @@ export type Product = {
   countryOfOrigin?: string;
   description?: string;
   galleryCount?: number;
+  images?: string[];
   variants?: ProductVariantSummary[];
   updatedAt?: number;
 };
@@ -180,6 +181,7 @@ function mapProduct(apiProduct: ApiProduct, categories: ApiCategory[]): Product 
     countryOfOrigin: apiProduct.countryOfOrigin,
     description: apiProduct.description,
     galleryCount: apiProduct.images?.length ?? 0,
+    images: apiProduct.images ?? [],
     variants: apiProduct.variants.map(item => ({
       id: item.id,
       size: item.label,
@@ -316,6 +318,7 @@ export function ProductCatalogProvider({ children }: { children: React.ReactNode
       if (patch.gstRate !== undefined) body.taxRate = parseFloat(patch.gstRate) || 0;
       if (patch.reorderLevel !== undefined) body.reorderLevel = patch.reorderLevel;
       if (patch.maxStock !== undefined) body.maxStock = patch.maxStock;
+      if (patch.images !== undefined) body.images = patch.images;
 
       const mergedVariants = mergeVariantsForPatch(raw, patch);
       if (mergedVariants) body.variants = mergedVariants;
