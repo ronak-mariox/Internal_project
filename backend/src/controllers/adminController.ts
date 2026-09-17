@@ -8,6 +8,7 @@ import { Order } from '../models/Order';
 import { Product } from '../models/Product';
 import { issueTokenPair } from '../lib/tokens';
 import { toSafeJson } from '../lib/sanitize';
+import { notifyVendor } from '../lib/vendorNotify';
 import { HttpError } from '../lib/httpError';
 
 export async function login(req: Request, res: Response) {
@@ -45,6 +46,18 @@ export async function updateVendorStatus(req: Request, res: Response) {
     { new: true },
   );
   if (!vendor) throw new HttpError(404, 'Vendor not found');
+
+  if (req.body.status === 'active') {
+    await notifyVendor(vendor._id, 'kyc-status', 'Application Approved', 'Your account is fully verified and active.');
+  } else if (req.body.status === 'rejected') {
+    await notifyVendor(
+      vendor._id,
+      'kyc-status',
+      'Application Rejected',
+      req.body.rejectionReason || 'Your registration was not approved.',
+    );
+  }
+
   res.json(toSafeJson(vendor, ['passwordHash']));
 }
 
@@ -79,6 +92,16 @@ export async function updateVendorStepReview(req: Request, res: Response) {
     },
   };
   await vendor.save();
+
+  if (req.body.status === 'verified' || req.body.status === 'rejected') {
+    await notifyVendor(
+      vendor._id,
+      'kyc-status',
+      req.body.status === 'verified' ? `${stepKey} verified` : `${stepKey} needs attention`,
+      req.body.status === 'rejected' && req.body.note ? req.body.note : `Your ${stepKey} step was ${req.body.status}.`,
+    );
+  }
+
   res.json(toSafeJson(vendor, ['passwordHash']));
 }
 

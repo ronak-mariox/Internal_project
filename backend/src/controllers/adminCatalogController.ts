@@ -3,6 +3,7 @@ import { Category } from '../models/Category';
 import { Product } from '../models/Product';
 import { HttpError } from '../lib/httpError';
 import { toSafeJson } from '../lib/sanitize';
+import { notifyVendor } from '../lib/vendorNotify';
 
 // ---------------------------------------------------------------------------
 // Categories
@@ -126,6 +127,22 @@ export async function updateProductStatus(req: Request, res: Response) {
     { new: true },
   );
   if (!product) throw new HttpError(404, 'Product not found');
+
+  if (status === 'active') {
+    await notifyVendor(product.vendorId, 'product-approval', 'Product Approved', `${product.name} is now live`, {
+      productId: product._id,
+      productName: product.name,
+    });
+  } else if (status === 'rejected') {
+    await notifyVendor(
+      product.vendorId,
+      'product-approval',
+      'Product Rejected',
+      rejectionReason ? `${product.name} · ${rejectionReason}` : `${product.name} was not approved`,
+      { productId: product._id, productName: product.name },
+    );
+  }
+
   res.json(toSafeJson(product));
 }
 

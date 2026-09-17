@@ -10,6 +10,7 @@ import { toSafeJson } from '../lib/sanitize';
 import { evaluateCoupon, computeOrderPricing, findVariant, priceLine } from '../lib/pricing';
 import { CANCELLABLE_STATUSES } from '../lib/orderStatus';
 import { notifyCustomer, notifyOrderStatusChange } from '../lib/notify';
+import { notifyVendor } from '../lib/vendorNotify';
 
 function generateOrderNumber(): string {
   const year = new Date().getFullYear();
@@ -163,6 +164,13 @@ export async function createOrder(req: Request, res: Response) {
     `Your order #${order.orderNumber} has been placed successfully.`,
     order._id,
   );
+  await notifyVendor(
+    order.vendorId,
+    'new-order',
+    `New Order #${order.orderNumber}`,
+    `${items.length} item${items.length === 1 ? '' : 's'} · ₹${pricing.grandTotal}`,
+    { orderId: order._id },
+  );
 
   res.status(201).json(toSafeJson(order));
 }
@@ -197,6 +205,13 @@ export async function cancelOrder(req: Request, res: Response) {
   await order.save();
 
   await notifyOrderStatusChange(order.customerId, order._id, order.orderNumber, 'cancelled', req.body.reason);
+  await notifyVendor(
+    order.vendorId,
+    'order-cancellation',
+    `Order #${order.orderNumber} Cancelled`,
+    req.body.reason ? `Cancelled by customer · ${req.body.reason}` : 'Cancelled by customer',
+    { orderId: order._id },
+  );
 
   res.json(toSafeJson(order));
 }

@@ -13,6 +13,7 @@ import { vendorProductRouter } from './vendorProducts';
 import { vendorOrderRouter } from './vendorOrders';
 import { vendorProfileRouter } from './vendorProfile';
 import { vendorAnalyticsRouter } from './vendorAnalytics';
+import { vendorNotificationRouter } from './vendorNotifications';
 import * as vendorController from '../controllers/vendorController';
 import * as customerCatalogController from '../controllers/customerCatalogController';
 
@@ -104,6 +105,7 @@ vendorRouter.post(
 // addresses, notification prefs) — see routes/vendorProfile.ts.
 vendorRouter.use('/me', vendorProfileRouter);
 vendorRouter.use('/analytics', vendorAnalyticsRouter);
+vendorRouter.use('/notifications', vendorNotificationRouter);
 
 // ---------------------------------------------------------------------------
 // Multi-step business registration — see routes/vendorRegistration.ts.

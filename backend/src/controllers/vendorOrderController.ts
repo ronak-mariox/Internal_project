@@ -7,6 +7,7 @@ import { HttpError } from '../lib/httpError';
 import { toSafeJson } from '../lib/sanitize';
 import { canTransition } from '../lib/orderStatus';
 import { notifyOrderStatusChange } from '../lib/notify';
+import { notifyVendor } from '../lib/vendorNotify';
 import type { OrderStatus, OrderDoc } from '../models/Order';
 
 /** The vendor app's order UI expects the customer's name/phone inline on each
@@ -68,6 +69,15 @@ export async function updateOrderStatus(req: Request, res: Response) {
   await order.save();
 
   await notifyOrderStatusChange(order.customerId, order._id, order.orderNumber, nextStatus, req.body.note);
+  if (nextStatus === 'delivered') {
+    await notifyVendor(
+      order.vendorId,
+      'payment',
+      'Payment Received',
+      `Order #${order.orderNumber} · ₹${order.pricing.grandTotal}`,
+      { orderId: order._id },
+    );
+  }
 
   const [withInfo] = await withCustomerInfo([order]);
   res.json(withInfo);

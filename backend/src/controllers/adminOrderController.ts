@@ -5,6 +5,7 @@ import { HttpError } from '../lib/httpError';
 import { toSafeJson } from '../lib/sanitize';
 import { canTransition } from '../lib/orderStatus';
 import { notifyOrderStatusChange } from '../lib/notify';
+import { notifyVendor } from '../lib/vendorNotify';
 
 export async function listAllOrders(req: Request, res: Response) {
   const { status, vendorId, customerId, page: pageRaw, limit: limitRaw } = req.query as Record<string, string | undefined>;
@@ -55,6 +56,23 @@ export async function updateOrderStatusAsAdmin(req: Request, res: Response) {
   await order.save();
 
   await notifyOrderStatusChange(order.customerId, order._id, order.orderNumber, nextStatus, req.body.note);
+  if (nextStatus === 'cancelled') {
+    await notifyVendor(
+      order.vendorId,
+      'order-cancellation',
+      `Order #${order.orderNumber} Cancelled`,
+      req.body.note ? `Cancelled by Verdant · ${req.body.note}` : 'Cancelled by Verdant',
+      { orderId: order._id },
+    );
+  } else if (nextStatus === 'delivered') {
+    await notifyVendor(
+      order.vendorId,
+      'payment',
+      'Payment Received',
+      `Order #${order.orderNumber} · ₹${order.pricing.grandTotal}`,
+      { orderId: order._id },
+    );
+  }
 
   res.json(toSafeJson(order));
 }

@@ -4,6 +4,7 @@ import { Vendor } from '../models/Vendor';
 import { HttpError } from '../lib/httpError';
 import { toSafeJson } from '../lib/sanitize';
 import { publicUrlFor } from '../lib/upload';
+import { notifyVendor } from '../lib/vendorNotify';
 
 /** Enforces the intended flow: approved registration first, then store setup,
  * only then can a vendor start listing products — a store with no profile,
@@ -134,8 +135,24 @@ export async function updateStock(req: Request, res: Response) {
   const variant = product.variants.find((v) => v.id === variantId);
   if (!variant) throw new HttpError(404, 'Variant not found');
 
+  const previousStock = variant.stock;
   variant.stock = stock;
   await product.save();
+
+  // Only fire once per threshold crossing (previous stock was above it) —
+  // otherwise every subsequent stock edit while already low would re-notify.
+  if (stock === 0 && previousStock > 0) {
+    await notifyVendor(product.vendorId, 'out-of-stock', `${product.name} out of stock`, `${variant.label} · Action needed`, {
+      productId: product._id,
+      productName: product.name,
+    });
+  } else if (product.reorderLevel !== undefined && stock > 0 && stock <= product.reorderLevel && previousStock > product.reorderLevel) {
+    await notifyVendor(product.vendorId, 'low-stock', `${product.name} going low`, `${variant.label} · ${stock} units left`, {
+      productId: product._id,
+      productName: product.name,
+    });
+  }
+
   res.json(toSafeJson(product));
 }
 
