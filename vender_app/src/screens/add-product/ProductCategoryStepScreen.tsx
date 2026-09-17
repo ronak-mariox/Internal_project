@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { AddProductHeader, Button, ScreenContainer } from '../../components';
@@ -12,8 +13,19 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'ProductCategoryStep'>;
 
 export function ProductCategoryStepScreen({ navigation }: Props) {
   const { draft } = useProductDraft();
-  const { categories, loading } = useProductCatalog();
+  const { categories, loading, refreshProducts } = useProductCatalog();
   const [selectedId, setSelectedId] = useState(draft.category?.categoryId ?? '');
+
+  // Categories are otherwise only loaded once when the app starts, so a category an
+  // admin adds after that would never show up here without this — refetch every
+  // time a vendor actually lands on this step, since that's exactly when a stale
+  // list matters most.
+  useFocusEffect(
+    useCallback(() => {
+      refreshProducts();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []),
+  );
 
   function handleContinue() {
     if (!selectedId) return;
