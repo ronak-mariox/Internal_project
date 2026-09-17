@@ -24,35 +24,30 @@ export function KYCReviewScreen({ navigation }: Props) {
     updateBankDetails,
   } = useRegistration();
 
-  // Resumability: if the app was restarted mid-registration, RegistrationContext is
-  // empty even though the server may already have persisted earlier steps (each
-  // registration PATCH call saves to the backend as it happens). Reconcile by
-  // pulling the server's copy and seeding the local context from it.
+  // Resumability: if the app was restarted mid-registration, RegistrationContext may
+  // be missing earlier steps even though the server already persisted them (each
+  // registration PATCH call saves to the backend as it happens) — e.g. a restart
+  // routes the vendor straight to their next incomplete step, they fill in just
+  // that one, and local context now only has that single step. Reconcile by
+  // pulling the server's copy and filling in ONLY whichever steps are missing
+  // locally — never overwriting a step that's already present in local context —
+  // so this runs safely every time regardless of how much local state exists.
   //
-  // TODO: this is a best-effort merge, not a full reconciliation — it only fills in
-  // steps when the *entire* local context is empty (e.g. fresh app start), and it
-  // re-derives the local-only `verified` flags (not persisted by the backend) as
-  // `true` for any step that already has data, since a previously-saved step implies
-  // it passed validation at the time. A more thorough implementation would merge
-  // per-step (server wins only for steps missing locally) and track verification
-  // state explicitly.
+  // The local-only `verified` flag (not persisted by the backend) is re-derived as
+  // `true` for any step filled in from the server, since a previously-saved step
+  // implies it passed validation at the time.
   useEffect(() => {
-    const hasLocalData = Boolean(
-      data.businessType || data.businessInfo || data.ownerInfo || data.storeInfo || data.bankDetails,
-    );
-    if (hasLocalData) return;
-
     (async () => {
       try {
         const { data: remote } = await api.get('/vendor/registration');
-        if (remote.businessType) updateBusinessType(remote.businessType);
-        if (remote.businessInfo) updateBusinessInfo(remote.businessInfo);
-        if (remote.ownerInfo) updateOwnerInfo(remote.ownerInfo);
-        if (remote.storeInfo) updateStoreInfo(remote.storeInfo);
-        if (remote.gstDetails) updateGstDetails({ ...remote.gstDetails, verified: true });
-        if (remote.panDetails) updatePanDetails({ ...remote.panDetails, verified: true });
-        if (remote.businessProof) updateBusinessProof(remote.businessProof);
-        if (remote.bankDetails) updateBankDetails({ ...remote.bankDetails, verified: true });
+        if (remote.businessType && !data.businessType) updateBusinessType(remote.businessType);
+        if (remote.businessInfo && !data.businessInfo) updateBusinessInfo(remote.businessInfo);
+        if (remote.ownerInfo && !data.ownerInfo) updateOwnerInfo(remote.ownerInfo);
+        if (remote.storeInfo && !data.storeInfo) updateStoreInfo(remote.storeInfo);
+        if (remote.gstDetails && !data.gstDetails) updateGstDetails({ ...remote.gstDetails, verified: true });
+        if (remote.panDetails && !data.panDetails) updatePanDetails({ ...remote.panDetails, verified: true });
+        if (remote.businessProof && !data.businessProof) updateBusinessProof(remote.businessProof);
+        if (remote.bankDetails && !data.bankDetails) updateBankDetails({ ...remote.bankDetails, verified: true });
       } catch {
         // Best-effort — if this fails (offline, etc.) the screen just shows whatever
         // is already in local context.
