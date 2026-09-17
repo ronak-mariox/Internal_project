@@ -20,7 +20,12 @@ export async function connectDb(): Promise<void> {
 
   await mongoose.connect(uri);
   // eslint-disable-next-line no-console
-  console.log(`Connected to MongoDB: ${uri}`);
+  console.log(`Connected to MongoDB: ${redactCredentials(uri)}`);
+}
+
+/** Never log a connection string's credentials verbatim — masks the `user:pass@` portion. */
+function redactCredentials(uri: string): string {
+  return uri.replace(/\/\/([^:/@]+):([^@/]+)@/, '//$1:****@');
 }
 
 export { mongoose };

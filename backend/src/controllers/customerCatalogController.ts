@@ -68,11 +68,13 @@ export async function getProduct(req: Request, res: Response) {
  * HomeScreen sections real without needing a bespoke banner-per-section schema.
  */
 export async function getHome(_req: Request, res: Response) {
-  const [categories, deals, saver, essentials, banners] = await Promise.all([
+  const [categories, deals, saver, essentials, snacks, monsoon, banners] = await Promise.all([
     Category.find({ isActive: true, showOnHome: true }).sort({ sortOrder: 1 }),
     Product.find({ status: 'active', isAvailable: true, tags: 'deal' }).limit(12),
     Product.find({ status: 'active', isAvailable: true, tags: 'saver' }).limit(10),
     Product.find({ status: 'active', isAvailable: true, tags: 'essential' }).limit(12),
+    Product.find({ status: 'active', isAvailable: true, tags: 'snack' }).limit(12),
+    Product.find({ status: 'active', isAvailable: true, tags: 'monsoon' }).limit(9),
     Category.find({ isActive: true, showOnHome: true }).sort({ sortOrder: 1 }).limit(6),
   ]);
 
@@ -81,6 +83,8 @@ export async function getHome(_req: Request, res: Response) {
     topDeals: deals.map((p) => toSafeJson(p)),
     saverItems: saver.map((p) => toSafeJson(p)),
     essentialItems: essentials.map((p) => toSafeJson(p)),
+    snackItems: snacks.map((p) => toSafeJson(p)),
+    monsoonItems: monsoon.map((p) => toSafeJson(p)),
     banners: banners.map((c) => ({ id: String(c._id), title: c.name, imageUrl: c.imageUrl })),
   });
 }

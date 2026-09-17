@@ -106,6 +106,78 @@ async function main() {
         { id: 'pet-essentials', name: 'Pet Essentials' },
       ],
     },
+    // The categories below back Verdant's HomeScreen "shop by store" tab row
+    // (Verdant/src/data/home.ts categoryTabs) — each tab maps to one of these
+    // real categories (see Verdant/src/data/categoryTabTargets.ts) instead of
+    // navigating nowhere with no backing data.
+    {
+      name: 'Electronics',
+      slug: 'electronics',
+      subs: [
+        { id: 'mobile-accessories', name: 'Mobile Accessories' },
+        { id: 'small-appliances', name: 'Small Appliances' },
+        { id: 'gadgets', name: 'Gadgets' },
+      ],
+    },
+    {
+      name: 'Mobiles',
+      slug: 'mobiles',
+      subs: [
+        { id: 'smartphones', name: 'Smartphones' },
+        { id: 'mobile-accessories', name: 'Mobile Accessories' },
+      ],
+    },
+    {
+      name: 'Fashion',
+      slug: 'fashion',
+      subs: [
+        { id: 'mens-wear', name: "Men's Wear" },
+        { id: 'womens-wear', name: "Women's Wear" },
+        { id: 'footwear', name: 'Footwear' },
+      ],
+    },
+    {
+      name: 'Kids',
+      slug: 'kids',
+      subs: [
+        { id: 'toys', name: 'Toys' },
+        { id: 'stationery', name: 'Stationery' },
+        { id: 'kids-wear', name: 'Kids Wear' },
+      ],
+    },
+    {
+      name: 'Healthcare',
+      slug: 'healthcare',
+      subs: [
+        { id: 'otc-medicines', name: 'OTC Medicines' },
+        { id: 'health-devices', name: 'Health Devices' },
+        { id: 'wellness', name: 'Wellness' },
+      ],
+    },
+    {
+      name: 'Gifting',
+      slug: 'gifting',
+      subs: [
+        { id: 'gift-hampers', name: 'Gift Hampers' },
+        { id: 'greeting-cards', name: 'Greeting Cards' },
+      ],
+    },
+    {
+      name: 'Paan Store',
+      slug: 'paanstore',
+      subs: [
+        { id: 'mouth-fresheners', name: 'Mouth Fresheners' },
+        { id: 'paan-corner', name: 'Paan Corner' },
+      ],
+    },
+    {
+      name: 'Monsoon Store',
+      slug: 'monsoon',
+      subs: [
+        { id: 'rainwear', name: 'Rainwear' },
+        { id: 'umbrellas', name: 'Umbrellas' },
+      ],
+    },
   ];
 
   const categories: Record<string, InstanceType<typeof Category>> = {};
@@ -141,14 +213,41 @@ async function main() {
     { name: 'Tata Salt', category: 'grocery', sub: 'staples', tags: ['saver', 'essential'], variants: [{ id: 'v-1kg', label: '1 kg', mrp: 25, price: 22 }] },
     { name: 'Fresh Bananas', category: 'grocery', sub: 'fruits-vegetables', tags: ['deal'], variants: [{ id: 'v-1dz', label: '1 dozen', mrp: 60, price: 49 }] },
     { name: 'Fresh Tomatoes', category: 'grocery', sub: 'fruits-vegetables', tags: ['deal', 'saver'], variants: [{ id: 'v-1kg', label: '1 kg', mrp: 40, price: 30 }] },
-    { name: "Lay's Classic Salted Chips", category: 'snacks', sub: 'chips-snacks', tags: ['deal'], variants: [{ id: 'v-52g', label: '52 g', mrp: 20, price: 20 }] },
-    { name: 'Coca-Cola', category: 'snacks', sub: 'soft-drinks', tags: ['saver'], variants: [{ id: 'v-750ml', label: '750 ml', mrp: 45, price: 40 }] },
+    { name: "Lay's Classic Salted Chips", category: 'snacks', sub: 'chips-snacks', tags: ['deal', 'snack'], variants: [{ id: 'v-52g', label: '52 g', mrp: 20, price: 20 }] },
+    { name: 'Coca-Cola', category: 'snacks', sub: 'soft-drinks', tags: ['saver', 'snack'], variants: [{ id: 'v-750ml', label: '750 ml', mrp: 45, price: 40 }] },
+    { name: "Haldiram's Bhujia Sev", category: 'snacks', sub: 'chips-snacks', tags: ['snack'], variants: [{ id: 'v-200g', label: '200 g', mrp: 55, price: 49 }] },
+    { name: "Britannia Good Day Cookies", category: 'snacks', sub: 'chips-snacks', tags: ['snack', 'saver'], variants: [{ id: 'v-100g', label: '100 g', mrp: 30, price: 26 }] },
     { name: 'Pears Soap', category: 'personal-care', sub: 'bath-body', tags: ['essential'], variants: [{ id: 'v-125g', label: '125 g', mrp: 55, price: 49 }] },
     { name: 'Colgate Strong Teeth Toothpaste', category: 'personal-care', sub: 'oral-care', tags: ['essential'], variants: [{ id: 'v-200g', label: '200 g', mrp: 105, price: 92 }] },
     { name: 'Vim Dishwash Gel', category: 'household', sub: 'cleaning', tags: ['essential'], variants: [{ id: 'v-500ml', label: '500 ml', mrp: 130, price: 109 }] },
     { name: 'Surf Excel Detergent', category: 'household', sub: 'laundry', tags: ['saver'], variants: [{ id: 'v-1kg', label: '1 kg', mrp: 150, price: 129 }] },
     { name: 'Pampers Baby Diapers', category: 'baby-pet', sub: 'baby-care', tags: ['essential'], variants: [{ id: 'v-m34', label: 'M, 34 pcs', mrp: 599, price: 519 }] },
     { name: 'Pedigree Adult Dog Food', category: 'baby-pet', sub: 'pet-food', tags: ['essential'], variants: [{ id: 'v-3kg', label: '3 kg', mrp: 750, price: 675 }] },
+
+    { name: 'boAt Bassheads 100 Wired Earphones', category: 'electronics', sub: 'mobile-accessories', tags: ['deal'], variants: [{ id: 'v-1pc', label: '1 piece', mrp: 599, price: 399 }] },
+    { name: 'Philips Hand Blender', category: 'electronics', sub: 'small-appliances', tags: [], variants: [{ id: 'v-1pc', label: '1 piece', mrp: 1495, price: 1199 }] },
+
+    { name: 'Redmi 13C 4G Smartphone', category: 'mobiles', sub: 'smartphones', tags: ['deal'], variants: [{ id: 'v-64gb', label: '64 GB', mrp: 9999, price: 8499 }] },
+    { name: 'Type-C Fast Charging Cable', category: 'mobiles', sub: 'mobile-accessories', tags: ['saver'], variants: [{ id: 'v-1m', label: '1 m', mrp: 299, price: 149 }] },
+
+    { name: "Men's Cotton Round Neck T-Shirt", category: 'fashion', sub: 'mens-wear', tags: ['deal'], variants: [{ id: 'v-l', label: 'L', mrp: 599, price: 349 }] },
+    { name: "Women's Casual Kurti", category: 'fashion', sub: 'womens-wear', tags: [], variants: [{ id: 'v-m', label: 'M', mrp: 899, price: 599 }] },
+
+    { name: 'Building Blocks Toy Set', category: 'kids', sub: 'toys', tags: ['deal'], variants: [{ id: 'v-100pc', label: '100 pieces', mrp: 699, price: 449 }] },
+    { name: 'Kids Colouring Book & Crayons Set', category: 'kids', sub: 'stationery', tags: ['essential'], variants: [{ id: 'v-1set', label: '1 set', mrp: 199, price: 149 }] },
+
+    { name: 'Dettol Antiseptic Liquid', category: 'healthcare', sub: 'wellness', tags: ['essential'], variants: [{ id: 'v-550ml', label: '550 ml', mrp: 210, price: 189 }] },
+    { name: 'Digital Thermometer', category: 'healthcare', sub: 'health-devices', tags: [], variants: [{ id: 'v-1pc', label: '1 piece', mrp: 299, price: 219 }] },
+
+    { name: 'Assorted Chocolate Gift Hamper', category: 'gifting', sub: 'gift-hampers', tags: ['deal'], variants: [{ id: 'v-1box', label: '1 box', mrp: 899, price: 649 }] },
+    { name: 'Birthday Greeting Card', category: 'gifting', sub: 'greeting-cards', tags: [], variants: [{ id: 'v-1pc', label: '1 piece', mrp: 99, price: 79 }] },
+
+    { name: 'Rajnigandha Silver Pearls Mouth Freshener', category: 'paanstore', sub: 'mouth-fresheners', tags: [], variants: [{ id: 'v-1pc', label: '1 piece', mrp: 10, price: 10 }] },
+    { name: 'Meetha Paan Masala', category: 'paanstore', sub: 'paan-corner', tags: ['saver'], variants: [{ id: 'v-100g', label: '100 g', mrp: 60, price: 52 }] },
+
+    { name: 'Reusable Rain Poncho', category: 'monsoon', sub: 'rainwear', tags: ['monsoon', 'deal'], variants: [{ id: 'v-1pc', label: '1 piece', mrp: 299, price: 199 }] },
+    { name: 'Automatic 3-Fold Umbrella', category: 'monsoon', sub: 'umbrellas', tags: ['monsoon'], variants: [{ id: 'v-1pc', label: '1 piece', mrp: 599, price: 449 }] },
+    { name: 'Waterproof Shoe Cover Pair', category: 'monsoon', sub: 'rainwear', tags: ['monsoon', 'saver'], variants: [{ id: 'v-1pr', label: '1 pair', mrp: 199, price: 129 }] },
   ];
 
   for (const def of productDefs) {
