@@ -1,0 +1,17 @@
+node_modules/
+.DS_Store
+*.log
+backend/dist/
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/.env
+admin_panel/dist/
+android/build/
+android/.gradle/
+android/app/build/
+ios/build/
+**/*.xcuserstate
+**/Pods/
+.bundle/
+vendor/bundle/
+Verdant/

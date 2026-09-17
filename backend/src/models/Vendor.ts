@@ -1,0 +1,255 @@
+import { Schema, model } from 'mongoose';
+
+// Shapes match vender_app's RegistrationContext exactly — stored as native nested
+// documents (not stringified JSON) so Mongo can query into them if ever needed.
+export interface BusinessInfoData {
+  legalName: string;
+  displayName: string;
+  category: string;
+  addressLine1: string;
+  addressLine2?: string;
+  city: string;
+  state: string;
+  pincode: string;
+  country?: string;
+}
+
+export interface OwnerInfoData {
+  fullName: string;
+  mobile: string;
+  email: string;
+  dob: string;
+  pan: string;
+}
+
+export interface StoreInfoData {
+  storeName: string;
+  storeAddress: string;
+  landmark?: string;
+  contactNumber: string;
+  storeType: string;
+  operatingHours: string;
+  location: { address: string; cityState: string; latitude: number; longitude: number };
+}
+
+export interface GstDetailsData {
+  registered: boolean;
+  gstin?: string;
+  businessName?: string;
+  registrationDate?: string;
+  category?: string;
+  certificateUrl?: string;
+}
+
+export interface PanDetailsData {
+  panNumber: string;
+  holderName: string;
+  dob: string;
+  panType: string;
+  documentUrl?: string;
+}
+
+export interface BusinessProofData {
+  documentType: string;
+  documentNumber: string;
+  issueDate: string;
+  expiryDate: string;
+  frontUrl: string;
+  backUrl?: string;
+}
+
+export interface BankDetailsData {
+  accountHolderName: string;
+  accountNumber: string;
+  ifsc: string;
+  bankName?: string;
+  branch?: string;
+  accountType: string;
+  upiId?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Store setup — the post-approval wizard (StoreSetupContext in vender_app),
+// separate from the pre-approval business-registration wizard above.
+// ---------------------------------------------------------------------------
+
+export interface StoreProfileData {
+  storeName: string;
+  description: string;
+  primaryCategory: string;
+  subCategory: string;
+  tags: string[];
+  minimumOrderValue: string;
+  avgPrepTime: string;
+}
+
+export interface StoreSetupLocationData {
+  address: string;
+  cityState: string;
+  latitude: number;
+  longitude: number;
+}
+
+export interface StoreSetupAddressData {
+  buildingShopNo: string;
+  street: string;
+  landmark: string;
+  area: string;
+  pincode: string;
+  city: string;
+  state: string;
+  contactNumber: string;
+  sameAsBusinessAddress: boolean;
+  location: StoreSetupLocationData;
+}
+
+export interface DayScheduleData {
+  day: string;
+  open: string;
+  close: string;
+  isOpen: boolean;
+}
+
+export interface OperatingHoursData {
+  sameEveryDay: boolean;
+  defaultOpen: string;
+  defaultClose: string;
+  breakEnabled: boolean;
+  weeklySchedule: DayScheduleData[];
+}
+
+export interface HolidayClosureItem {
+  id: string;
+  title: string;
+  date: string;
+  daysClosed: number;
+  note: string;
+}
+
+export interface DeliverySlabData {
+  id: string;
+  range: string;
+  charge: string;
+}
+
+export interface DeliverySettingsData {
+  fulfillmentType: 'delivery' | 'pickup' | 'both';
+  deliveryRadiusKm: number;
+  minimumOrderForDelivery: string;
+  chargeType: string;
+  slabs: DeliverySlabData[];
+  freeDeliveryAbove: string;
+}
+
+export interface DeliverySlotData {
+  id: string;
+  label: string;
+  window: string;
+  totalSlots: number;
+  usedSlots: number;
+}
+
+export interface ServiceAvailabilityData {
+  slotsEnabled: boolean;
+  slots: DeliverySlotData[];
+  maxSimultaneousOrders: string;
+  autoPauseAtCapacity: boolean;
+}
+
+export type StoreStatusValue = 'open' | 'closed' | 'temporarily-closed';
+
+export interface TempClosureData {
+  reason: string;
+  customMessage: string;
+  fromDate: string;
+  toDate: string;
+  closeFromTime: string;
+  reopenAt: string;
+  notifyCustomers: boolean;
+}
+
+export interface VendorDoc {
+  _id: unknown;
+  phone: string;
+  email?: string;
+  passwordHash?: string;
+  fullName?: string;
+  avatarUrl?: string;
+
+  status: 'pending' | 'active' | 'suspended' | 'rejected';
+  kycStatus: 'pending' | 'verified' | 'rejected';
+  registrationStep: string;
+  referenceId?: string;
+
+  businessType?: 'individual' | 'proprietorship' | 'partnership' | 'private-limited' | 'other';
+  businessInfo?: BusinessInfoData;
+  ownerInfo?: OwnerInfoData;
+  storeInfo?: StoreInfoData;
+  gstDetails?: GstDetailsData;
+  panDetails?: PanDetailsData;
+  businessProof?: BusinessProofData;
+  bankDetails?: BankDetailsData;
+
+  rejectionReason?: string;
+
+  // Store setup (post-approval wizard)
+  storeSetupStep: string;
+  storeSetupCompletedAt?: Date;
+  storeProfile?: StoreProfileData;
+  storeLogoUrl?: string;
+  storeCoverImageUrl?: string;
+  storeSetupAddress?: StoreSetupAddressData;
+  operatingHours?: OperatingHoursData;
+  holidays: HolidayClosureItem[];
+  deliverySettings?: DeliverySettingsData;
+  serviceAvailability?: ServiceAvailabilityData;
+  storeStatus: StoreStatusValue;
+  storeStatusSetAt?: Date;
+  tempClosure?: TempClosureData;
+
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const vendorSchema = new Schema<VendorDoc>(
+  {
+    phone: { type: String, required: true, unique: true },
+    email: { type: String, unique: true, sparse: true },
+    passwordHash: String,
+    fullName: String,
+    avatarUrl: String,
+
+    status: { type: String, enum: ['pending', 'active', 'suspended', 'rejected'], default: 'pending' },
+    kycStatus: { type: String, enum: ['pending', 'verified', 'rejected'], default: 'pending' },
+    registrationStep: { type: String, default: 'account' },
+    referenceId: String,
+
+    businessType: { type: String, enum: ['individual', 'proprietorship', 'partnership', 'private-limited', 'other'] },
+    businessInfo: { type: Schema.Types.Mixed },
+    ownerInfo: { type: Schema.Types.Mixed },
+    storeInfo: { type: Schema.Types.Mixed },
+    gstDetails: { type: Schema.Types.Mixed },
+    panDetails: { type: Schema.Types.Mixed },
+    businessProof: { type: Schema.Types.Mixed },
+    bankDetails: { type: Schema.Types.Mixed },
+
+    rejectionReason: String,
+
+    storeSetupStep: { type: String, default: 'profile' },
+    storeSetupCompletedAt: Date,
+    storeProfile: { type: Schema.Types.Mixed },
+    storeLogoUrl: String,
+    storeCoverImageUrl: String,
+    storeSetupAddress: { type: Schema.Types.Mixed },
+    operatingHours: { type: Schema.Types.Mixed },
+    holidays: { type: [Schema.Types.Mixed] as unknown as HolidayClosureItem[], default: [] },
+    deliverySettings: { type: Schema.Types.Mixed },
+    serviceAvailability: { type: Schema.Types.Mixed },
+    storeStatus: { type: String, enum: ['open', 'closed', 'temporarily-closed'], default: 'open' },
+    storeStatusSetAt: Date,
+    tempClosure: { type: Schema.Types.Mixed },
+  },
+  { timestamps: true },
+);
+
+export const Vendor = model<VendorDoc>('Vendor', vendorSchema);
