@@ -190,6 +190,7 @@ export function ProductDraftProvider({ children }: { children: React.ReactNode }
     const variants: CreateProductInput['variants'] =
       manualVariants.length > 0
         ? manualVariants.map(variant => ({
+            id: variant.id,
             label: variant.size,
             mrp: parseFloat(variant.mrp) || 0,
             price: parseFloat(variant.sellingPrice) || 0,
@@ -198,6 +199,7 @@ export function ProductDraftProvider({ children }: { children: React.ReactNode }
           }))
         : [
             {
+              id: `v${Date.now()}`,
               label: packSizeLabel || 'Default',
               mrp,
               price: sellingPrice,

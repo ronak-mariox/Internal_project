@@ -1,4 +1,5 @@
 import { Schema, model, Types } from 'mongoose';
+import crypto from 'node:crypto';
 
 export interface ProductVariant {
   id: string;
@@ -40,7 +41,10 @@ export interface ProductDoc {
 
 const variantSchema = new Schema<ProductVariant>(
   {
-    id: { type: String, required: true },
+    // Defaulted rather than left to the client — a variant with no caller-supplied
+    // id (e.g. a simple single-variant product with no "Variants" step filled in)
+    // would otherwise fail this required field at save time.
+    id: { type: String, required: true, default: () => crypto.randomUUID() },
     label: { type: String, required: true },
     mrp: { type: Number, required: true, min: 0 },
     price: { type: Number, required: true, min: 0 },
