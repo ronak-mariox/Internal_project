@@ -68,6 +68,16 @@ export interface BankDetailsData {
   upiId?: string;
 }
 
+/** Additional pickup/warehouse addresses a vendor keeps on file, distinct from
+ * the single registration business address and store-setup address above. */
+export interface VendorAddressData {
+  id: string;
+  label: string;
+  line1: string;
+  line2?: string;
+  isPrimary: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Store setup — the post-approval wizard (StoreSetupContext in vender_app),
 // separate from the pre-approval business-registration wizard above.
@@ -215,6 +225,14 @@ export interface VendorDoc {
 
   rejectionReason?: string;
 
+  /** Extra addresses (e.g. a separate warehouse) beyond the single business/store
+   * addresses above — managed post-approval from the Profile tab. */
+  addresses: VendorAddressData[];
+
+  /** Which notification categories this vendor wants — keyed the same as
+   * vender_app's NotificationPref list. Missing keys default to enabled. */
+  notificationPrefs?: Record<string, boolean>;
+
   // Store setup (post-approval wizard)
   storeSetupStep: string;
   storeSetupCompletedAt?: Date;
@@ -258,6 +276,9 @@ const vendorSchema = new Schema<VendorDoc>(
     stepReviews: { type: Schema.Types.Mixed, default: {} },
 
     rejectionReason: String,
+
+    addresses: { type: [Schema.Types.Mixed] as unknown as VendorAddressData[], default: [] },
+    notificationPrefs: { type: Schema.Types.Mixed, default: {} },
 
     storeSetupStep: { type: String, default: 'profile' },
     storeSetupCompletedAt: Date,

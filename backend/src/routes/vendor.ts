@@ -11,6 +11,7 @@ import { vendorRegistrationRouter } from './vendorRegistration';
 import { vendorStoreSetupRouter } from './vendorStoreSetup';
 import { vendorProductRouter } from './vendorProducts';
 import { vendorOrderRouter } from './vendorOrders';
+import { vendorProfileRouter } from './vendorProfile';
 import * as vendorController from '../controllers/vendorController';
 import * as customerCatalogController from '../controllers/customerCatalogController';
 
@@ -97,6 +98,10 @@ vendorRouter.post(
   upload.single('avatar'),
   asyncHandler(vendorController.uploadAvatar),
 );
+
+// Post-approval profile editing (business/owner/store/bank info, stats,
+// addresses, notification prefs) — see routes/vendorProfile.ts.
+vendorRouter.use('/me', vendorProfileRouter);
 
 // ---------------------------------------------------------------------------
 // Multi-step business registration — see routes/vendorRegistration.ts.
