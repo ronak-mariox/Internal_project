@@ -1,4 +1,5 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { api } from '../services/api';
 
 export type NotificationCategory =
   | 'new-order'
@@ -30,128 +31,77 @@ export type AppNotification = {
   productName?: string;
 };
 
-const INITIAL_NOTIFICATIONS: AppNotification[] = [
-  {
-    id: 'NTF-2024-8825',
-    category: 'new-order',
-    title: 'New Order #VD9284',
-    subtitle: 'Rajesh Kumar · ₹428',
-    timeLabel: '2 min ago',
-    group: 'Today',
-    read: false,
-    tabs: ['orders'],
-    orderId: 'ORD-8821',
-  },
-  {
-    id: 'NTF-2024-8824',
-    category: 'low-stock',
-    title: 'Amul Full Cream Milk going low',
-    subtitle: '8 units left',
-    timeLabel: '15 min ago',
-    group: 'Today',
-    read: false,
-    tabs: ['system'],
-    productName: 'Amul Full Cream Milk',
-  },
-  {
-    id: 'NTF-2024-8828',
-    category: 'order-cancellation',
-    title: 'Order #ORD-8814 Cancelled',
-    subtitle: 'Anita Singh · Ordered by mistake',
-    timeLabel: '35 min ago',
-    group: 'Today',
-    read: false,
-    tabs: ['orders'],
-    orderId: 'ORD-8814',
-  },
-  {
-    id: 'NTF-2024-8827',
-    category: 'payment',
-    title: 'Payment Received',
-    subtitle: 'Order #ORD-8814 · ₹445',
-    timeLabel: '40 min ago',
-    group: 'Today',
-    read: false,
-    tabs: ['payments'],
-    orderId: 'ORD-8814',
-  },
-  {
-    id: 'NTF-2024-8826',
-    category: 'product-approval',
-    title: 'Product Approved',
-    subtitle: 'Fortune Sunflower Oil 1L is now live',
-    timeLabel: '50 min ago',
-    group: 'Today',
-    read: false,
-    tabs: ['system'],
-    productName: 'Fortune Sunflower Oil 1L',
-  },
-  {
-    id: 'NTF-2024-8823',
-    category: 'settlement',
-    title: 'Settlement ₹37,582 credited',
-    subtitle: 'STL-2024-0089',
-    timeLabel: '1 hour ago',
-    group: 'Today',
-    read: false,
-    tabs: ['payments'],
-    settlementId: 'STL-2024-0089',
-  },
-  {
-    id: 'NTF-2024-8822',
-    category: 'out-of-stock',
-    title: 'Tata Salt 1kg out of stock',
-    subtitle: 'Action needed',
-    timeLabel: '2 hours ago',
-    group: 'Today',
-    read: true,
-    tabs: ['system'],
-    productName: 'Tata Salt (500g)',
-  },
-  {
-    id: 'NTF-2024-8821',
-    category: 'kyc-status',
-    title: 'KYC documents approved',
-    subtitle: 'Account fully verified',
-    timeLabel: 'Yesterday',
-    group: 'Yesterday',
-    read: true,
-    tabs: ['system'],
-  },
-  {
-    id: 'NTF-2024-8820',
-    category: 'announcement',
-    title: 'New Verdant policy update',
-    subtitle: 'Important changes to commission',
-    timeLabel: '3 days ago',
-    group: 'Earlier',
-    read: true,
-    tabs: ['system'],
-  },
-  {
-    id: 'NTF-2024-8819',
-    category: 'store-status',
-    title: 'Store temporarily closed',
-    subtitle: 'Auto-closed outside operating hours',
-    timeLabel: '3 days ago',
-    group: 'Earlier',
-    read: true,
-    tabs: ['system'],
-  },
-  {
-    id: 'NTF-2024-8818',
-    category: 'system-alert',
-    title: 'Scheduled maintenance tonight',
-    subtitle: '12:00 AM – 2:00 AM · App may be unavailable',
-    timeLabel: '4 days ago',
-    group: 'Earlier',
-    read: true,
-    tabs: ['system'],
-  },
-];
+const CATEGORY_TABS: Record<NotificationCategory, NotificationTab[]> = {
+  'new-order': ['orders'],
+  'order-cancellation': ['orders'],
+  'low-stock': ['system'],
+  'out-of-stock': ['system'],
+  payment: ['payments'],
+  settlement: ['payments'],
+  'product-approval': ['system'],
+  'kyc-status': ['system'],
+  'store-status': ['system'],
+  'system-alert': ['system'],
+  announcement: ['system'],
+};
+
+interface RawNotification {
+  id: string;
+  category: NotificationCategory;
+  title: string;
+  subtitle: string;
+  isRead: boolean;
+  orderId?: string;
+  productId?: string;
+  productName?: string;
+  createdAt: string;
+}
+
+function timeLabelOf(iso: string): string {
+  const then = new Date(iso).getTime();
+  const minutes = Math.floor((Date.now() - then) / 60000);
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days} days ago`;
+  return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
+
+function isSameCalendarDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function groupOf(iso: string): NotificationGroup {
+  const date = new Date(iso);
+  const now = new Date();
+  if (isSameCalendarDay(date, now)) return 'Today';
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (isSameCalendarDay(date, yesterday)) return 'Yesterday';
+  return 'Earlier';
+}
+
+function toAppNotification(raw: RawNotification): AppNotification {
+  return {
+    id: raw.id,
+    category: raw.category,
+    title: raw.title,
+    subtitle: raw.subtitle,
+    timeLabel: timeLabelOf(raw.createdAt),
+    group: groupOf(raw.createdAt),
+    read: raw.isRead,
+    tabs: CATEGORY_TABS[raw.category] ?? ['system'],
+    orderId: raw.orderId,
+    productName: raw.productName,
+  };
+}
 
 type NotificationsContextValue = {
   notifications: AppNotification[];
+  isLoading: boolean;
   getNotification: (id: string) => AppNotification | undefined;
   unreadCount: number;
   markAsRead: (id: string) => void;
@@ -159,43 +109,68 @@ type NotificationsContextValue = {
   undoMarkAllAsRead: (previous: AppNotification[]) => void;
   dismissNotification: (id: string) => void;
   clearAll: () => void;
+  refresh: () => Promise<void>;
 };
 
 const NotificationsContext = createContext<NotificationsContextValue | null>(null);
 
 export function NotificationsProvider({ children }: { children: React.ReactNode }) {
-  const [notifications, setNotifications] = useState<AppNotification[]>(INITIAL_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const { data } = await api.get<RawNotification[]>('/vendor/notifications');
+      setNotifications(data.map(toAppNotification));
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh().catch(() => {});
+  }, [refresh]);
 
   const getNotification = useCallback(
-    (id: string) => notifications.find(item => item.id === id),
+    (id: string) => notifications.find((item) => item.id === id),
     [notifications],
   );
 
-  const unreadCount = useMemo(() => notifications.filter(item => !item.read).length, [notifications]);
+  const unreadCount = useMemo(() => notifications.filter((item) => !item.read).length, [notifications]);
 
   const markAsRead = useCallback((id: string) => {
-    setNotifications(prev => prev.map(item => (item.id === id ? { ...item, read: true } : item)));
+    setNotifications((prev) => prev.map((item) => (item.id === id ? { ...item, read: true } : item)));
+    api.patch(`/vendor/notifications/${id}/read`).catch(() => {});
   }, []);
 
   const markAllAsRead = useCallback(() => {
-    setNotifications(prev => prev.map(item => ({ ...item, read: true })));
+    setNotifications((prev) => prev.map((item) => ({ ...item, read: true })));
+    api.patch('/vendor/notifications/read-all').catch(() => {});
   }, []);
 
   const undoMarkAllAsRead = useCallback((previous: AppNotification[]) => {
     setNotifications(previous);
+    const idsToRestore = previous.filter((item) => !item.read).map((item) => item.id);
+    if (idsToRestore.length > 0) {
+      api.patch('/vendor/notifications/mark-unread', { ids: idsToRestore }).catch(() => {});
+    }
   }, []);
 
   const dismissNotification = useCallback((id: string) => {
-    setNotifications(prev => prev.filter(item => item.id !== id));
+    setNotifications((prev) => prev.filter((item) => item.id !== id));
+    api.delete(`/vendor/notifications/${id}`).catch(() => {});
   }, []);
 
   const clearAll = useCallback(() => {
     setNotifications([]);
+    api.delete('/vendor/notifications').catch(() => {});
   }, []);
 
   const value = useMemo(
     () => ({
       notifications,
+      isLoading,
       getNotification,
       unreadCount,
       markAsRead,
@@ -203,8 +178,9 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
       undoMarkAllAsRead,
       dismissNotification,
       clearAll,
+      refresh,
     }),
-    [notifications, getNotification, unreadCount, markAsRead, markAllAsRead, undoMarkAllAsRead, dismissNotification, clearAll],
+    [notifications, isLoading, getNotification, unreadCount, markAsRead, markAllAsRead, undoMarkAllAsRead, dismissNotification, clearAll, refresh],
   );
 
   return <NotificationsContext.Provider value={value}>{children}</NotificationsContext.Provider>;

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import {
@@ -31,8 +32,15 @@ const UNREAD_BLUE = '#1570EF';
 const UNDO_WINDOW_SECONDS = 5;
 
 export function NotificationsScreen({ navigation }: Props) {
-  const { notifications, unreadCount, markAsRead, markAllAsRead, undoMarkAllAsRead } = useNotifications();
+  const { notifications, unreadCount, markAsRead, markAllAsRead, undoMarkAllAsRead, refresh } = useNotifications();
   const [activeTab, setActiveTab] = useState<NotificationTab>('all');
+
+  useFocusEffect(
+    useCallback(() => {
+      refresh().catch(() => {});
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []),
+  );
   const [toastVisible, setToastVisible] = useState(false);
   const [countdown, setCountdown] = useState(UNDO_WINDOW_SECONDS);
 
