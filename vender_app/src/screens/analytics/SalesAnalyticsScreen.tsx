@@ -28,8 +28,7 @@ const CATEGORY_BREAKDOWN = [
 ];
 
 export function SalesAnalyticsScreen({ navigation }: Props) {
-  const { kpiStats, revenueTrend } = useAnalytics();
-  const [period, setPeriod] = useState<AnalyticsPeriod>('week');
+  const { kpiStats, revenueTrend, period, setPeriod } = useAnalytics();
   const revenue = kpiStats.find(stat => stat.key === 'revenue');
 
   return (

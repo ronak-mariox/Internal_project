@@ -34,8 +34,7 @@ const AOV_TIPS = [
 ];
 
 export function AverageOrderValueScreen({ navigation }: Props) {
-  const { kpiStats, revenueTrend } = useAnalytics();
-  const [period, setPeriod] = useState<AnalyticsPeriod>('week');
+  const { kpiStats, revenueTrend, period, setPeriod } = useAnalytics();
 
   const avgOrder = kpiStats.find(stat => stat.key === 'avgOrder');
   const changeBadge = avgOrder?.changeLabel.split(' vs')[0] ?? '';

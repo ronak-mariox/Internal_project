@@ -73,8 +73,7 @@ function TargetGauge({ percent }: { percent: number }) {
 }
 
 export function RevenueAnalyticsScreen({ navigation }: Props) {
-  const { kpiStats } = useAnalytics();
-  const [period, setPeriod] = useState<AnalyticsPeriod>('week');
+  const { kpiStats, period, setPeriod } = useAnalytics();
 
   const revenueStat = kpiStats.find(stat => stat.key === 'revenue');
   const achieved = parseInr(revenueStat?.value ?? '0');

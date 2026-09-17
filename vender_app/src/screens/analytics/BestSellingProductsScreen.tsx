@@ -24,8 +24,7 @@ function formatInr(value: number) {
 }
 
 export function BestSellingProductsScreen({ navigation }: Props) {
-  const { bestSellingProducts } = useAnalytics();
-  const [period, setPeriod] = useState<AnalyticsPeriod>('week');
+  const { bestSellingProducts, period, setPeriod } = useAnalytics();
   const [metric, setMetric] = useState<MetricTab>('revenue');
 
   const rankedProducts = useMemo(

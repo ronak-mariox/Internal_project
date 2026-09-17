@@ -22,10 +22,9 @@ function healthColor(percent: number): string {
 }
 
 export function InventoryPerformanceScreen({ navigation }: Props) {
-  const { inventoryPerformance } = useAnalytics();
+  const { inventoryPerformance, period, setPeriod } = useAnalytics();
   const { products } = useProductCatalog();
   const { eventsForProduct } = useInventory();
-  const [period, setPeriod] = useState<AnalyticsPeriod>('week');
 
   const inStockCount = useMemo(() => products.filter(p => p.status === 'active').length, [products]);
   const lowStockCount = useMemo(() => products.filter(p => p.status === 'low-stock').length, [products]);

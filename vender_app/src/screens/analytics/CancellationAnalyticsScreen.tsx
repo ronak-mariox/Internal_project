@@ -37,8 +37,7 @@ function formatINR(value: number): string {
 }
 
 export function CancellationAnalyticsScreen({ navigation }: Props) {
-  const { kpiStats, cancellationReasons } = useAnalytics();
-  const [period, setPeriod] = useState<AnalyticsPeriod>('week');
+  const { kpiStats, cancellationReasons, period, setPeriod } = useAnalytics();
 
   const cancelledStat = kpiStats.find(stat => stat.key === 'cancelled');
   const ordersStat = kpiStats.find(stat => stat.key === 'orders');

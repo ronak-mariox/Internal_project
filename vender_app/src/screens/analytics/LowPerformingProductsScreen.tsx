@@ -21,13 +21,13 @@ const TABS: { key: SortTab; label: string }[] = [
 function sortProducts(products: LowPerformingProduct[], tab: SortTab) {
   const copy = [...products];
   if (tab === 'sales') return copy.sort((a, b) => a.revenue - b.revenue);
-  if (tab === 'views') return copy.sort((a, b) => b.daysSinceLastSale - a.daysSinceLastSale);
+  // A product that's never sold (null) is treated as the most stale.
+  if (tab === 'views') return copy.sort((a, b) => (b.daysSinceLastSale ?? Infinity) - (a.daysSinceLastSale ?? Infinity));
   return copy.sort((a, b) => a.unitsSold - b.unitsSold);
 }
 
 export function LowPerformingProductsScreen({ navigation }: Props) {
-  const { lowPerformingProducts } = useAnalytics();
-  const [period, setPeriod] = useState<AnalyticsPeriod>('week');
+  const { lowPerformingProducts, period, setPeriod } = useAnalytics();
   const [tab, setTab] = useState<SortTab>('sales');
 
   const sortedProducts = useMemo(
@@ -90,7 +90,7 @@ export function LowPerformingProductsScreen({ navigation }: Props) {
                   {product.name}
                 </Text>
                 <Text style={styles.rowSubtitle}>
-                  Last sold {product.daysSinceLastSale} days ago
+                  {product.daysSinceLastSale === null ? 'Never sold' : `Last sold ${product.daysSinceLastSale} days ago`}
                 </Text>
               </View>
               <View style={styles.rowMeta}>

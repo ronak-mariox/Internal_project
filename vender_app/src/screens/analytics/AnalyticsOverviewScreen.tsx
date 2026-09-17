@@ -34,8 +34,7 @@ const KPI_ROUTES: Record<KpiStat['key'], keyof AuthStackParamList> = {
 };
 
 export function AnalyticsOverviewScreen({ navigation }: Props) {
-  const { kpiStats, revenueTrend } = useAnalytics();
-  const [period, setPeriod] = useState<AnalyticsPeriod>('week');
+  const { kpiStats, revenueTrend, period, setPeriod } = useAnalytics();
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>

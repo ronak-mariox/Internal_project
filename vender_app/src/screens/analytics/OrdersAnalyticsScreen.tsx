@@ -77,8 +77,7 @@ function CompletionRing({ percent, size = 108, strokeWidth = 10 }: { percent: nu
 }
 
 export function OrdersAnalyticsScreen({ navigation }: Props) {
-  const { kpiStats } = useAnalytics();
-  const [period, setPeriod] = useState<AnalyticsPeriod>('week');
+  const { kpiStats, period, setPeriod } = useAnalytics();
 
   const ordersStat = kpiStats.find(stat => stat.key === 'orders');
   const cancelledStat = kpiStats.find(stat => stat.key === 'cancelled');
