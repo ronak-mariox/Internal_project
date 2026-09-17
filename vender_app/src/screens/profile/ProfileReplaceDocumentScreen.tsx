@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { useProfile, DocumentStatus } from '../../context/ProfileContext';
 import { Badge, BadgeTone, Button, NavHeader } from '../../components';
 import { Icon } from '../../icons/Icon';
+import { pickAndUploadVendorDocument } from '../../services/documentUpload';
+import { getApiErrorMessage } from '../../services/api';
 import { colors, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'ProfileReplaceDocument'>;
@@ -26,7 +28,10 @@ export function ProfileReplaceDocumentScreen({ navigation, route }: Props) {
   const { documentId } = route.params;
   const { getDocument, replaceDocument } = useProfile();
   const document = getDocument(documentId);
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [pickedFileName, setPickedFileName] = useState<string | null>(null);
+  const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!document) {
     return (
@@ -40,15 +45,34 @@ export function ProfileReplaceDocumentScreen({ navigation, route }: Props) {
     );
   }
 
-  function handlePickFile() {
-    setSelectedFile(`${document!.name.replace(/\s+/g, '_')}_new.pdf`);
+  async function handlePickFile() {
+    setIsUploading(true);
+    try {
+      const url = await pickAndUploadVendorDocument('gallery');
+      if (url) {
+        setUploadedUrl(url);
+        setPickedFileName(`${document!.name.replace(/\s+/g, '_')}_new.jpg`);
+      }
+    } catch (err) {
+      Alert.alert('Upload failed', getApiErrorMessage(err));
+    } finally {
+      setIsUploading(false);
+    }
   }
 
-  function handleSubmit() {
-    replaceDocument(documentId);
-    Alert.alert('Document Replaced', 'Your new document has been submitted for verification.', [
-      { text: 'OK', onPress: () => navigation.goBack() },
-    ]);
+  async function handleSubmit() {
+    if (!uploadedUrl || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      await replaceDocument(documentId, uploadedUrl);
+      Alert.alert('Document Replaced', 'Your new document has been submitted for verification.', [
+        { text: 'OK', onPress: () => navigation.goBack() },
+      ]);
+    } catch (err) {
+      Alert.alert('Could not replace document', getApiErrorMessage(err));
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -84,13 +108,17 @@ export function ProfileReplaceDocumentScreen({ navigation, route }: Props) {
 
         <Text style={styles.sectionHeader}>Step 1: Upload New Document</Text>
         <View style={styles.dropzoneWrap}>
-          <Pressable style={styles.dropzone} onPress={handlePickFile}>
-            <Icon name="upload" size={32} color={colors.textSecondary} />
+          <Pressable style={styles.dropzone} onPress={handlePickFile} disabled={isUploading}>
+            {isUploading ? (
+              <ActivityIndicator color={colors.primary} />
+            ) : (
+              <Icon name="upload" size={32} color={colors.textSecondary} />
+            )}
             <Text style={styles.dropzoneTitle}>
-              {selectedFile ? selectedFile : 'Tap to upload document'}
+              {pickedFileName ? pickedFileName : isUploading ? 'Uploading…' : 'Tap to upload document'}
             </Text>
             <Text style={styles.dropzoneSubtitle}>
-              {selectedFile ? 'Tap to choose a different file' : 'PDF, JPG, PNG · Max 5 MB'}
+              {pickedFileName ? 'Tap to choose a different photo' : 'Photo of the document · JPG, PNG'}
             </Text>
           </Pressable>
         </View>
@@ -104,9 +132,9 @@ export function ProfileReplaceDocumentScreen({ navigation, route }: Props) {
 
         <View style={styles.footer}>
           <Button
-            label="Upload & Replace"
+            label={isSubmitting ? 'Submitting…' : 'Upload & Replace'}
             onPress={handleSubmit}
-            disabled={!selectedFile}
+            disabled={!uploadedUrl || isSubmitting}
           />
           <Pressable style={styles.cancelButton} onPress={() => navigation.goBack()} hitSlop={8}>
             <Text style={styles.cancelText}>Cancel</Text>

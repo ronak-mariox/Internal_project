@@ -23,7 +23,10 @@ export function ProfileEditBankDetailsScreen({ navigation }: Props) {
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
-  function handleSave() {
+  const [isSaving, setIsSaving] = useState(false);
+
+  async function handleSave() {
+    if (isSaving) return;
     if (!accountHolderName.trim() || !bankName.trim() || !accountNumber.trim() || ifsc.length !== 11) {
       setError('Please fill in all required fields');
       return;
@@ -37,13 +40,20 @@ export function ProfileEditBankDetailsScreen({ navigation }: Props) {
       return;
     }
     setError(undefined);
-    updateBankDetails({
-      accountHolderName: accountHolderName.trim(),
-      bankName: bankName.trim(),
-      ifsc,
-      accountNumber,
-    });
-    navigation.goBack();
+    setIsSaving(true);
+    try {
+      await updateBankDetails({
+        accountHolderName: accountHolderName.trim(),
+        bankName: bankName.trim(),
+        ifsc,
+        accountNumber,
+      });
+      navigation.goBack();
+    } catch {
+      setError('Could not save bank details — please check your connection and try again.');
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (

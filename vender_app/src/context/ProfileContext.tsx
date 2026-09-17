@@ -1,4 +1,5 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { api } from '../services/api';
 
 export type VendorStats = {
   orders: number;
@@ -76,184 +77,350 @@ export type NotificationPref = {
   enabled: boolean;
 };
 
-const INITIAL_PROFILE: ProfileCore = {
-  storeName: 'Sharma Kirana Store',
-  vendorCode: 'VND-2847',
-  avatarInitials: 'RS',
-  status: 'Active',
-  kycVerified: true,
-  stats: { orders: 847, revenue: 184320, rating: 4.7 },
-  vendor: {
-    businessType: 'Proprietorship',
-    legalName: 'Sharma Kirana Store',
-    gstNumber: '07AAACS1234F1Z5',
-    panNumber: 'AAACS1234F',
-    registeredAddress: '14B Lal Bahadur Nagar, Hyderabad, Telangana – 500032',
-  },
-  owner: {
-    name: 'Rajesh Sharma',
-    phone: '+91 98765 43210',
-    email: 'rajesh.sharma@example.com',
-    dateOfBirth: '12 Jun 1985',
-  },
-  store: {
-    category: 'Grocery & Daily Essentials',
-    description: 'Neighbourhood kirana store serving fresh groceries and daily essentials since 2015.',
-    storeCode: 'STR-4471',
-    onboardedLabel: '15 Jan 2024',
-  },
+// Labels/descriptions/grouping are fixed product copy (nothing to persist per
+// vendor beyond the on/off flag) — only `enabled` comes from the backend.
+const NOTIFICATION_PREF_DEFS: Omit<NotificationPref, 'enabled'>[] = [
+  { key: 'new-order', label: 'New Order', description: 'Alert when a new order arrives', group: 'Orders', locked: true },
+  { key: 'order-updates', label: 'Order Updates', description: 'Status changes for active orders', group: 'Orders', locked: true },
+  { key: 'order-cancelled', label: 'Order Cancelled', description: 'When an order is cancelled', group: 'Orders', locked: true },
+  { key: 'low-stock', label: 'Low Stock Alerts', description: 'When stock falls below threshold', group: 'Inventory', locked: false },
+  { key: 'out-of-stock', label: 'Out of Stock', description: 'Item goes out of stock', group: 'Inventory', locked: false },
+  { key: 'restock-reminders', label: 'Restock Reminders', description: 'Scheduled restock suggestions', group: 'Inventory', locked: false },
+  { key: 'settlement-credited', label: 'Settlement Credited', description: 'Weekly settlement deposited', group: 'Payments', locked: false },
+  { key: 'payment-received', label: 'Payment Received', description: 'Customer payment confirmation', group: 'Payments', locked: false },
+  { key: 'deductions', label: 'Deductions', description: 'Commission and fee deductions', group: 'Payments', locked: false },
+  { key: 'app-updates', label: 'App Updates', description: 'New app version available', group: 'System', locked: false },
+  { key: 'policy-changes', label: 'Policy Changes', description: 'Terms and policy updates', group: 'System', locked: false },
+  { key: 'marketing', label: 'Marketing', description: 'Promotions and offers from Verdant', group: 'System', locked: false },
+];
+const DEFAULT_ENABLED_KEYS = new Set(
+  NOTIFICATION_PREF_DEFS.filter((d) => d.locked || d.key !== 'restock-reminders' && d.key !== 'deductions' && d.key !== 'marketing').map((d) => d.key),
+);
+
+// ---------------------------------------------------------------------------
+// Backend shapes (only the fields this context actually reads/writes)
+// ---------------------------------------------------------------------------
+
+interface StepReview {
+  status: DocumentStatus;
+  note?: string;
+}
+
+interface RawVendor {
+  phone: string;
+  email?: string;
+  fullName?: string;
+  status: string;
+  kycStatus: string;
+  referenceId?: string;
+  businessType?: string;
+  businessInfo?: { legalName?: string; addressLine1?: string; addressLine2?: string; city?: string; state?: string; pincode?: string };
+  ownerInfo?: { fullName?: string; mobile?: string; email?: string; dob?: string };
+  storeInfo?: { storeType?: string; contactNumber?: string };
+  gstDetails?: { registered?: boolean; gstin?: string; certificateUrl?: string };
+  panDetails?: { panNumber?: string; documentUrl?: string };
+  businessProof?: { documentType?: string; frontUrl?: string };
+  bankDetails?: { accountHolderName?: string; accountNumber?: string; ifsc?: string; bankName?: string };
+  stepReviews?: Partial<Record<string, StepReview>>;
+  storeProfile?: { storeName?: string; description?: string; primaryCategory?: string };
+  createdAt: string;
+}
+
+interface RawStats {
+  orders: number;
+  revenue: number;
+  rating: number | null;
+}
+
+interface RawAddress {
+  id: string;
+  label: string;
+  line1: string;
+  line2?: string;
+  isPrimary: boolean;
+}
+
+function initialsOf(name?: string): string {
+  if (!name) return '—';
+  const initials = name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('');
+  return initials || '—';
+}
+
+function formatAddress(info?: RawVendor['businessInfo']): string {
+  if (!info) return '';
+  return [info.addressLine1, info.addressLine2, info.city, info.state, info.pincode].filter(Boolean).join(', ');
+}
+
+function formatOnboardedLabel(iso?: string): string {
+  if (!iso) return '—';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function toProfileCore(vendor: RawVendor, stats: RawStats): ProfileCore {
+  return {
+    storeName: vendor.storeProfile?.storeName || vendor.businessInfo?.legalName || vendor.fullName || 'Your Store',
+    vendorCode: vendor.referenceId ?? '—',
+    avatarInitials: initialsOf(vendor.ownerInfo?.fullName || vendor.fullName),
+    status: vendor.status.charAt(0).toUpperCase() + vendor.status.slice(1),
+    kycVerified: vendor.kycStatus === 'verified',
+    stats: { orders: stats.orders, revenue: stats.revenue, rating: stats.rating ?? 0 },
+    vendor: {
+      businessType: vendor.businessType ?? '',
+      legalName: vendor.businessInfo?.legalName ?? '',
+      gstNumber: vendor.gstDetails?.gstin ?? '',
+      panNumber: vendor.panDetails?.panNumber ?? '',
+      registeredAddress: formatAddress(vendor.businessInfo),
+    },
+    owner: {
+      name: vendor.ownerInfo?.fullName || vendor.fullName || '',
+      phone: vendor.storeInfo?.contactNumber || vendor.ownerInfo?.mobile || vendor.phone,
+      email: vendor.ownerInfo?.email || vendor.email || '',
+      dateOfBirth: vendor.ownerInfo?.dob ?? '',
+    },
+    store: {
+      category: vendor.storeProfile?.primaryCategory || vendor.storeInfo?.storeType || '',
+      description: vendor.storeProfile?.description ?? '',
+      storeCode: vendor.referenceId ?? '—',
+      onboardedLabel: formatOnboardedLabel(vendor.createdAt),
+    },
+  };
+}
+
+function stepStatus(vendor: RawVendor, key: string): DocumentStatus {
+  const status = vendor.stepReviews?.[key]?.status;
+  return status === 'verified' || status === 'rejected' ? status : 'pending';
+}
+
+function toDocuments(vendor: RawVendor): ProfileDocument[] {
+  const docs: ProfileDocument[] = [];
+  if (vendor.panDetails) {
+    docs.push({
+      id: 'panDetails',
+      name: 'PAN Card',
+      status: stepStatus(vendor, 'panDetails'),
+      uploadedLabel: 'Submitted during registration',
+      rejectionReason: vendor.stepReviews?.panDetails?.note,
+    });
+  }
+  if (vendor.gstDetails?.registered) {
+    docs.push({
+      id: 'gstDetails',
+      name: 'GST Certificate',
+      status: stepStatus(vendor, 'gstDetails'),
+      uploadedLabel: 'Submitted during registration',
+      rejectionReason: vendor.stepReviews?.gstDetails?.note,
+    });
+  }
+  if (vendor.businessProof) {
+    docs.push({
+      id: 'businessProof',
+      name: vendor.businessProof.documentType || 'Business Proof',
+      status: stepStatus(vendor, 'businessProof'),
+      uploadedLabel: 'Submitted during registration',
+      rejectionReason: vendor.stepReviews?.businessProof?.note,
+    });
+  }
+  if (vendor.bankDetails) {
+    docs.push({
+      id: 'bankDetails',
+      name: 'Bank Details',
+      status: stepStatus(vendor, 'bankDetails'),
+      uploadedLabel: 'Submitted during registration',
+      rejectionReason: vendor.stepReviews?.bankDetails?.note,
+    });
+  }
+  return docs;
+}
+
+function toBankDetails(vendor: RawVendor): BankDetails {
+  const accountNumber = vendor.bankDetails?.accountNumber;
+  return {
+    accountHolderName: vendor.bankDetails?.accountHolderName ?? '',
+    // Masked for display — the edit screen always collects a fresh full number
+    // rather than pre-filling from this value, so masking here is safe.
+    accountNumber: accountNumber ? `****${accountNumber.slice(-4)}` : '',
+    ifsc: vendor.bankDetails?.ifsc ?? '',
+    bankName: vendor.bankDetails?.bankName ?? '',
+  };
+}
+
+function toAddress(raw: RawAddress): Address {
+  return { id: raw.id, label: raw.label, line1: raw.line1, line2: raw.line2 ?? '', isPrimary: raw.isPrimary };
+}
+
+const EMPTY_PROFILE: ProfileCore = {
+  storeName: '',
+  vendorCode: '—',
+  avatarInitials: '—',
+  status: '',
+  kycVerified: false,
+  stats: { orders: 0, revenue: 0, rating: 0 },
+  vendor: { businessType: '', legalName: '', gstNumber: '', panNumber: '', registeredAddress: '' },
+  owner: { name: '', phone: '', email: '', dateOfBirth: '' },
+  store: { category: '', description: '', storeCode: '—', onboardedLabel: '—' },
 };
 
-const INITIAL_ADDRESSES: Address[] = [
-  {
-    id: 'addr-store',
-    label: 'Store Address',
-    line1: '14B Lal Bahadur Nagar',
-    line2: 'Hyderabad, Telangana – 500032',
-    isPrimary: true,
-  },
-  {
-    id: 'addr-warehouse',
-    label: 'Warehouse',
-    line1: '22 Industrial Estate, Phase 2',
-    line2: 'Hyderabad, Telangana – 500055',
-    isPrimary: false,
-  },
-];
-
-const INITIAL_DOCUMENTS: ProfileDocument[] = [
-  { id: 'doc-pan', name: 'PAN Card', status: 'verified', uploadedLabel: 'Uploaded 15 Jan' },
-  { id: 'doc-aadhaar', name: 'Aadhaar Card', status: 'verified', uploadedLabel: 'Uploaded 15 Jan' },
-  { id: 'doc-gst', name: 'GST Certificate', status: 'verified', uploadedLabel: 'Uploaded 15 Jan' },
-  { id: 'doc-shop-license', name: 'Shop License', status: 'verified', uploadedLabel: 'Uploaded 15 Jan' },
-  { id: 'doc-bank-proof', name: 'Bank Proof (Passbook)', status: 'verified', uploadedLabel: 'Uploaded 15 Jan' },
-];
-
-const INITIAL_BANK_DETAILS: BankDetails = {
-  accountHolderName: 'Rajesh Sharma',
-  accountNumber: '****2847',
-  ifsc: 'HDFC0001234',
-  bankName: 'HDFC Bank',
-};
-
-const INITIAL_NOTIFICATION_PREFS: NotificationPref[] = [
-  { key: 'new-order', label: 'New Order', description: 'Alert when a new order arrives', group: 'Orders', locked: true, enabled: true },
-  { key: 'order-updates', label: 'Order Updates', description: 'Status changes for active orders', group: 'Orders', locked: true, enabled: true },
-  { key: 'order-cancelled', label: 'Order Cancelled', description: 'When an order is cancelled', group: 'Orders', locked: true, enabled: true },
-  { key: 'low-stock', label: 'Low Stock Alerts', description: 'When stock falls below threshold', group: 'Inventory', locked: false, enabled: true },
-  { key: 'out-of-stock', label: 'Out of Stock', description: 'Item goes out of stock', group: 'Inventory', locked: false, enabled: true },
-  { key: 'restock-reminders', label: 'Restock Reminders', description: 'Scheduled restock suggestions', group: 'Inventory', locked: false, enabled: false },
-  { key: 'settlement-credited', label: 'Settlement Credited', description: 'Weekly settlement deposited', group: 'Payments', locked: false, enabled: true },
-  { key: 'payment-received', label: 'Payment Received', description: 'Customer payment confirmation', group: 'Payments', locked: false, enabled: true },
-  { key: 'deductions', label: 'Deductions', description: 'Commission and fee deductions', group: 'Payments', locked: false, enabled: false },
-  { key: 'app-updates', label: 'App Updates', description: 'New app version available', group: 'System', locked: false, enabled: true },
-  { key: 'policy-changes', label: 'Policy Changes', description: 'Terms and policy updates', group: 'System', locked: false, enabled: true },
-  { key: 'marketing', label: 'Marketing', description: 'Promotions and offers from Verdant', group: 'System', locked: false, enabled: false },
-];
+const EMPTY_BANK: BankDetails = { accountHolderName: '', accountNumber: '', ifsc: '', bankName: '' };
 
 type ProfileContextValue = {
+  isLoading: boolean;
   profile: ProfileCore;
-  updateVendorInfo: (value: Partial<VendorInfo>) => void;
-  updateOwnerInfo: (value: Partial<OwnerInfo>) => void;
-  updateStoreInfo: (value: Partial<StoreInfo>) => void;
-  updateProfileBasics: (value: { storeName?: string; avatarInitials?: string }) => void;
+  updateVendorInfo: (value: Partial<VendorInfo>) => Promise<void>;
+  updateOwnerInfo: (value: Partial<OwnerInfo>) => Promise<void>;
+  updateStoreInfo: (value: Partial<StoreInfo>) => Promise<void>;
+  updateProfileBasics: (value: { storeName?: string; avatarInitials?: string }) => Promise<void>;
 
   addresses: Address[];
   getAddress: (addressId: string) => Address | undefined;
-  addAddress: (address: Address) => void;
-  updateAddress: (addressId: string, value: Partial<Address>) => void;
-  removeAddress: (addressId: string) => void;
-  setPrimaryAddress: (addressId: string) => void;
+  addAddress: (address: { label: string; line1: string; line2?: string }) => Promise<void>;
+  updateAddress: (addressId: string, value: Partial<Address>) => Promise<void>;
+  removeAddress: (addressId: string) => Promise<void>;
+  setPrimaryAddress: (addressId: string) => Promise<void>;
 
   documents: ProfileDocument[];
   getDocument: (documentId: string) => ProfileDocument | undefined;
-  replaceDocument: (documentId: string) => void;
-  addDocument: (document: ProfileDocument) => void;
+  replaceDocument: (documentId: string, url: string) => Promise<void>;
 
   bankDetails: BankDetails;
-  updateBankDetails: (value: Partial<BankDetails>) => void;
+  updateBankDetails: (value: Partial<BankDetails> & { accountNumber: string }) => Promise<void>;
 
   notificationPrefs: NotificationPref[];
-  toggleNotificationPref: (key: string) => void;
+  toggleNotificationPref: (key: string) => Promise<void>;
+
+  refresh: () => Promise<void>;
 };
 
 const ProfileContext = createContext<ProfileContextValue | null>(null);
 
 export function ProfileProvider({ children }: { children: React.ReactNode }) {
-  const [profile, setProfile] = useState<ProfileCore>(INITIAL_PROFILE);
-  const [addresses, setAddresses] = useState<Address[]>(INITIAL_ADDRESSES);
-  const [documents, setDocuments] = useState<ProfileDocument[]>(INITIAL_DOCUMENTS);
-  const [bankDetails, setBankDetails] = useState<BankDetails>(INITIAL_BANK_DETAILS);
-  const [notificationPrefs, setNotificationPrefs] = useState<NotificationPref[]>(INITIAL_NOTIFICATION_PREFS);
+  const [vendor, setVendor] = useState<RawVendor | null>(null);
+  const [stats, setStats] = useState<RawStats>({ orders: 0, revenue: 0, rating: null });
+  const [rawAddresses, setRawAddresses] = useState<RawAddress[]>([]);
+  const [enabledPrefs, setEnabledPrefs] = useState<Record<string, boolean>>({});
+  const [isLoading, setIsLoading] = useState(true);
 
-  const updateVendorInfo = useCallback((value: Partial<VendorInfo>) => {
-    setProfile(prev => ({ ...prev, vendor: { ...prev.vendor, ...value } }));
+  const refresh = useCallback(async () => {
+    const [vendorRes, statsRes, addressesRes, prefsRes] = await Promise.all([
+      api.get<RawVendor>('/vendor/me'),
+      api.get<RawStats>('/vendor/me/stats'),
+      api.get<RawAddress[]>('/vendor/me/addresses'),
+      api.get<Record<string, boolean>>('/vendor/me/notification-prefs'),
+    ]);
+    setVendor(vendorRes.data);
+    setStats(statsRes.data);
+    setRawAddresses(addressesRes.data);
+    setEnabledPrefs(prefsRes.data);
   }, []);
 
-  const updateOwnerInfo = useCallback((value: Partial<OwnerInfo>) => {
-    setProfile(prev => ({ ...prev, owner: { ...prev.owner, ...value } }));
-  }, []);
+  useEffect(() => {
+    refresh()
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
+  }, [refresh]);
 
-  const updateStoreInfo = useCallback((value: Partial<StoreInfo>) => {
-    setProfile(prev => ({ ...prev, store: { ...prev.store, ...value } }));
-  }, []);
-
-  const updateProfileBasics = useCallback((value: { storeName?: string; avatarInitials?: string }) => {
-    setProfile(prev => ({ ...prev, ...value }));
-  }, []);
-
-  const getAddress = useCallback(
-    (addressId: string) => addresses.find(a => a.id === addressId),
-    [addresses],
+  const profile = useMemo(() => (vendor ? toProfileCore(vendor, stats) : EMPTY_PROFILE), [vendor, stats]);
+  const documents = useMemo(() => (vendor ? toDocuments(vendor) : []), [vendor]);
+  const bankDetails = useMemo(() => (vendor ? toBankDetails(vendor) : EMPTY_BANK), [vendor]);
+  const addresses = useMemo(() => rawAddresses.map(toAddress), [rawAddresses]);
+  const notificationPrefs = useMemo(
+    () =>
+      NOTIFICATION_PREF_DEFS.map((def) => ({
+        ...def,
+        enabled: enabledPrefs[def.key] ?? DEFAULT_ENABLED_KEYS.has(def.key),
+      })),
+    [enabledPrefs],
   );
 
-  const addAddress = useCallback((address: Address) => {
-    setAddresses(prev => [...prev, address]);
+  const updateVendorInfo = useCallback(async (value: Partial<VendorInfo>) => {
+    const { data } = await api.patch<RawVendor>('/vendor/me', {
+      businessInfo: value.legalName !== undefined ? { legalName: value.legalName } : undefined,
+    });
+    setVendor(data);
   }, []);
 
-  const updateAddress = useCallback((addressId: string, value: Partial<Address>) => {
-    setAddresses(prev => prev.map(a => (a.id === addressId ? { ...a, ...value } : a)));
+  const updateOwnerInfo = useCallback(async (value: Partial<OwnerInfo>) => {
+    // "phone" here is the store's public contact/WhatsApp number shown on
+    // EditProfileScreen — distinct from the owner's registered login mobile,
+    // so it maps onto storeInfo.contactNumber rather than ownerInfo.mobile.
+    const { data } = await api.patch<RawVendor>('/vendor/me', {
+      ...(value.name !== undefined && { ownerInfo: { fullName: value.name } }),
+      ...(value.phone !== undefined && { storeInfo: { contactNumber: value.phone } }),
+    });
+    setVendor(data);
   }, []);
 
-  const removeAddress = useCallback((addressId: string) => {
-    setAddresses(prev => prev.filter(a => a.id !== addressId));
+  const updateStoreInfo = useCallback(async (value: Partial<StoreInfo>) => {
+    const { data } = await api.patch<RawVendor>('/vendor/me', {
+      storeProfile: { ...(value.description !== undefined && { description: value.description }) },
+    });
+    setVendor(data);
   }, []);
 
-  const setPrimaryAddress = useCallback((addressId: string) => {
-    setAddresses(prev => prev.map(a => ({ ...a, isPrimary: a.id === addressId })));
+  const updateProfileBasics = useCallback(async (value: { storeName?: string; avatarInitials?: string }) => {
+    if (value.storeName === undefined) return;
+    const { data } = await api.patch<RawVendor>('/vendor/me', { storeProfile: { storeName: value.storeName } });
+    setVendor(data);
   }, []);
 
-  const getDocument = useCallback(
-    (documentId: string) => documents.find(d => d.id === documentId),
-    [documents],
+  const getAddress = useCallback((addressId: string) => addresses.find((a) => a.id === addressId), [addresses]);
+
+  const addAddress = useCallback(async (address: { label: string; line1: string; line2?: string }) => {
+    const { data } = await api.post<RawAddress[]>('/vendor/me/addresses', address);
+    setRawAddresses(data);
+  }, []);
+
+  const updateAddress = useCallback(async (addressId: string, value: Partial<Address>) => {
+    const { data } = await api.patch<RawAddress[]>(`/vendor/me/addresses/${addressId}`, value);
+    setRawAddresses(data);
+  }, []);
+
+  const removeAddress = useCallback(async (addressId: string) => {
+    const { data } = await api.delete<RawAddress[]>(`/vendor/me/addresses/${addressId}`);
+    setRawAddresses(data);
+  }, []);
+
+  const setPrimaryAddress = useCallback(async (addressId: string) => {
+    const { data } = await api.patch<RawAddress[]>(`/vendor/me/addresses/${addressId}/primary`);
+    setRawAddresses(data);
+  }, []);
+
+  const getDocument = useCallback((documentId: string) => documents.find((d) => d.id === documentId), [documents]);
+
+  const replaceDocument = useCallback(async (documentId: string, url: string) => {
+    const { data } = await api.patch<RawVendor>(`/vendor/me/documents/${documentId}/replace`, { url });
+    setVendor(data);
+  }, []);
+
+  const updateBankDetails = useCallback(async (value: Partial<BankDetails> & { accountNumber: string }) => {
+    const { data } = await api.patch<RawVendor>('/vendor/me', { bankDetails: value });
+    setVendor(data);
+  }, []);
+
+  const toggleNotificationPref = useCallback(
+    async (key: string) => {
+      const def = NOTIFICATION_PREF_DEFS.find((d) => d.key === key);
+      if (!def || def.locked) return;
+      const nextEnabled = !(enabledPrefs[key] ?? DEFAULT_ENABLED_KEYS.has(key));
+      setEnabledPrefs((prev) => ({ ...prev, [key]: nextEnabled }));
+      try {
+        await api.patch('/vendor/me/notification-prefs', { [key]: nextEnabled });
+      } catch {
+        setEnabledPrefs((prev) => ({ ...prev, [key]: !nextEnabled }));
+      }
+    },
+    [enabledPrefs],
   );
 
-  const replaceDocument = useCallback((documentId: string) => {
-    setDocuments(prev =>
-      prev.map(d =>
-        d.id === documentId
-          ? { ...d, status: 'pending', uploadedLabel: 'Uploaded just now', rejectionReason: undefined }
-          : d,
-      ),
-    );
-  }, []);
-
-  const addDocument = useCallback((document: ProfileDocument) => {
-    setDocuments(prev => [...prev, document]);
-  }, []);
-
-  const updateBankDetails = useCallback((value: Partial<BankDetails>) => {
-    setBankDetails(prev => ({ ...prev, ...value }));
-  }, []);
-
-  const toggleNotificationPref = useCallback((key: string) => {
-    setNotificationPrefs(prev =>
-      prev.map(pref => (pref.key === key && !pref.locked ? { ...pref, enabled: !pref.enabled } : pref)),
-    );
-  }, []);
-
-  const value = useMemo(
+  const value = useMemo<ProfileContextValue>(
     () => ({
+      isLoading,
       profile,
       updateVendorInfo,
       updateOwnerInfo,
@@ -268,13 +435,14 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       documents,
       getDocument,
       replaceDocument,
-      addDocument,
       bankDetails,
       updateBankDetails,
       notificationPrefs,
       toggleNotificationPref,
+      refresh,
     }),
     [
+      isLoading,
       profile,
       updateVendorInfo,
       updateOwnerInfo,
@@ -289,11 +457,11 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       documents,
       getDocument,
       replaceDocument,
-      addDocument,
       bankDetails,
       updateBankDetails,
       notificationPrefs,
       toggleNotificationPref,
+      refresh,
     ],
   );
 

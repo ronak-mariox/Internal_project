@@ -32,9 +32,13 @@ export function ProfileAddressDetailsScreen({ navigation, route }: Props) {
       initialLabel={address.label}
       initialLine1={address.line1}
       initialLine2={address.line2}
-      onSave={(value) => {
-        updateAddress(addressId, value);
-        navigation.goBack();
+      onSave={async (value) => {
+        try {
+          await updateAddress(addressId, value);
+          navigation.goBack();
+        } catch {
+          Alert.alert('Could not save address', 'Please check your connection and try again.');
+        }
       }}
       onBack={() => navigation.goBack()}
     />
@@ -52,7 +56,7 @@ function AddressDetailsForm({
   initialLabel: string;
   initialLine1: string;
   initialLine2: string;
-  onSave: (value: { label: string; line1: string; line2: string }) => void;
+  onSave: (value: { label: string; line1: string; line2: string }) => void | Promise<void>;
   onBack: () => void;
 }) {
   const [label, setLabel] = useState(initialLabel);

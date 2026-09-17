@@ -30,6 +30,7 @@ export function EditProfileScreen({ navigation }: Props) {
   const [displayName, setDisplayName] = useState(deriveDisplayName(profile.storeName));
   const [description, setDescription] = useState(profile.store.description);
   const [whatsapp, setWhatsapp] = useState(profile.owner.phone);
+  const [isSaving, setIsSaving] = useState(false);
 
   function handleChangeLogo() {
     Alert.alert('Change Logo', 'Coming soon.');
@@ -39,11 +40,22 @@ export function EditProfileScreen({ navigation }: Props) {
     Alert.alert('Change Cover', 'Coming soon.');
   }
 
-  function handleSave() {
-    updateProfileBasics({ storeName });
-    updateStoreInfo({ description });
-    updateOwnerInfo({ phone: whatsapp });
-    navigation.goBack();
+  async function handleSave() {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      // Sequential, not Promise.all — updateProfileBasics and updateStoreInfo
+      // both merge into the same backend storeProfile object, so running them
+      // concurrently could let one overwrite the other's change.
+      await updateProfileBasics({ storeName });
+      await updateStoreInfo({ description });
+      await updateOwnerInfo({ phone: whatsapp });
+      navigation.goBack();
+    } catch {
+      Alert.alert('Could not save changes', 'Please check your connection and try again.');
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
