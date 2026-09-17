@@ -12,6 +12,7 @@ import { vendorStoreSetupRouter } from './vendorStoreSetup';
 import { vendorProductRouter } from './vendorProducts';
 import { vendorOrderRouter } from './vendorOrders';
 import { vendorProfileRouter } from './vendorProfile';
+import { vendorAnalyticsRouter } from './vendorAnalytics';
 import * as vendorController from '../controllers/vendorController';
 import * as customerCatalogController from '../controllers/customerCatalogController';
 
@@ -102,6 +103,7 @@ vendorRouter.post(
 // Post-approval profile editing (business/owner/store/bank info, stats,
 // addresses, notification prefs) — see routes/vendorProfile.ts.
 vendorRouter.use('/me', vendorProfileRouter);
+vendorRouter.use('/analytics', vendorAnalyticsRouter);
 
 // ---------------------------------------------------------------------------
 // Multi-step business registration — see routes/vendorRegistration.ts.
