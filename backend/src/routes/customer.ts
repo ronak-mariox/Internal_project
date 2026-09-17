@@ -8,6 +8,10 @@ import { upload } from '../lib/upload';
 import { asyncHandler } from '../utils/asyncHandler';
 import { env } from '../lib/env';
 import * as customerController from '../controllers/customerController';
+import { customerCatalogRouter } from './customerCatalog';
+import { customerAddressRouter } from './customerAddress';
+import { customerCartRouter } from './customerCart';
+import { customerOrderRouter } from './customerOrders';
 
 export const customerRouter = Router();
 
@@ -77,3 +81,12 @@ customerRouter.post(
   upload.single('avatar'),
   asyncHandler(customerController.uploadAvatar),
 );
+
+// ---------------------------------------------------------------------------
+// Catalog browsing, addresses, cart, and orders — see their own route files.
+// ---------------------------------------------------------------------------
+
+customerRouter.use('/', customerCatalogRouter);
+customerRouter.use('/addresses', customerAddressRouter);
+customerRouter.use('/cart', customerCartRouter);
+customerRouter.use('/orders', customerOrderRouter);

@@ -5,6 +5,9 @@ import { handleValidation } from '../middleware/validate';
 import { authenticate, authorize } from '../middleware/auth';
 import { asyncHandler } from '../utils/asyncHandler';
 import * as adminController from '../controllers/adminController';
+import { adminCatalogRouter } from './adminCatalog';
+import { adminOrderRouter } from './adminOrders';
+import { adminCouponRouter } from './adminCoupons';
 
 export const adminRouter = Router();
 
@@ -69,3 +72,36 @@ adminRouter.patch(
   handleValidation,
   asyncHandler(adminController.updateDriverStatus),
 );
+
+// ---------------------------------------------------------------------------
+// Directory listings (full rosters, not just pending) + dashboard
+// ---------------------------------------------------------------------------
+
+adminRouter.get('/vendors', authenticate, authorize('admin'), asyncHandler(adminController.getAllVendors));
+adminRouter.get('/vendors/:id', authenticate, authorize('admin'), asyncHandler(adminController.getVendorById));
+
+adminRouter.get('/drivers', authenticate, authorize('admin'), asyncHandler(adminController.getAllDrivers));
+adminRouter.get('/drivers/:id', authenticate, authorize('admin'), asyncHandler(adminController.getDriverById));
+
+adminRouter.get('/customers', authenticate, authorize('admin'), asyncHandler(adminController.getAllCustomers));
+adminRouter.get('/customers/:id', authenticate, authorize('admin'), asyncHandler(adminController.getCustomerById));
+adminRouter.patch(
+  '/customers/:id/status',
+  authenticate,
+  authorize('admin'),
+  param('id').isString().notEmpty(),
+  body('status').isIn(['active', 'blocked']),
+  handleValidation,
+  asyncHandler(adminController.updateCustomerStatus),
+);
+
+adminRouter.get('/dashboard', authenticate, authorize('admin'), asyncHandler(adminController.getDashboard));
+
+// ---------------------------------------------------------------------------
+// Catalog (categories + product moderation), orders, and coupons — see their
+// own route files.
+// ---------------------------------------------------------------------------
+
+adminRouter.use('/', adminCatalogRouter);
+adminRouter.use('/orders', adminOrderRouter);
+adminRouter.use('/coupons', adminCouponRouter);

@@ -9,7 +9,10 @@ import { asyncHandler } from '../utils/asyncHandler';
 import { env } from '../lib/env';
 import { vendorRegistrationRouter } from './vendorRegistration';
 import { vendorStoreSetupRouter } from './vendorStoreSetup';
+import { vendorProductRouter } from './vendorProducts';
+import { vendorOrderRouter } from './vendorOrders';
 import * as vendorController from '../controllers/vendorController';
+import * as customerCatalogController from '../controllers/customerCatalogController';
 
 export const vendorRouter = Router();
 
@@ -106,3 +109,18 @@ vendorRouter.use('/registration', vendorRegistrationRouter);
 // ---------------------------------------------------------------------------
 
 vendorRouter.use('/store-setup', vendorStoreSetupRouter);
+
+// ---------------------------------------------------------------------------
+// Categories (read-only — vendors assign products to admin-managed categories),
+// products, and order management — see their own route files.
+// ---------------------------------------------------------------------------
+
+vendorRouter.get(
+  '/categories',
+  authenticate,
+  authorize('vendor'),
+  asyncHandler(customerCatalogController.getCategories),
+);
+
+vendorRouter.use('/products', vendorProductRouter);
+vendorRouter.use('/orders', vendorOrderRouter);
