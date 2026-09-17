@@ -1,4 +1,5 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { api } from '../services/api';
 
 export type StoreProfileData = {
   storeName: string;
@@ -110,10 +111,13 @@ type StoreSetupData = {
   serviceAvailability?: ServiceAvailabilityData;
   storeStatus: StoreStatusValue;
   tempClosure?: TempClosureData;
+  setupCompletedAt?: string | null;
 };
 
 type StoreSetupContextValue = {
   data: StoreSetupData;
+  isLoading: boolean;
+  refresh: () => Promise<void>;
   updateProfile: (value: StoreProfileData) => void;
   setLogoUploaded: (value: boolean, url?: string) => void;
   setCoverImageUploaded: (value: boolean, url?: string) => void;
@@ -129,17 +133,67 @@ type StoreSetupContextValue = {
 
 const StoreSetupContext = createContext<StoreSetupContextValue | null>(null);
 
-const DEFAULT_HOLIDAYS: HolidayClosureItem[] = [
-  { id: 'diwali', title: 'Diwali', date: '01 Nov 2024', daysClosed: 2, note: 'Festival closure' },
-  { id: 'dussehra', title: 'Dussehra', date: '12 Oct 2024', daysClosed: 1, note: 'Festival closure' },
-  { id: 'republic-day', title: 'Republic Day', date: '26 Jan 2025', daysClosed: 1, note: 'National holiday' },
-];
+const EMPTY_DATA: StoreSetupData = { holidays: [], storeStatus: 'open' };
+
+// Shape returned by GET /vendor/store-setup (see backend's vendorStoreSetupController#getStoreSetup).
+interface ApiStoreSetup {
+  storeSetupStep: string;
+  storeSetupCompletedAt: string | null;
+  storeProfile: StoreProfileData | null;
+  storeLogoUrl: string | null;
+  storeCoverImageUrl: string | null;
+  storeSetupAddress: StoreAddressData | null;
+  operatingHours: OperatingHoursData | null;
+  holidays: HolidayClosureItem[];
+  deliverySettings: DeliverySettingsData | null;
+  serviceAvailability: ServiceAvailabilityData | null;
+  storeStatus: StoreStatusValue;
+  tempClosure: TempClosureData | null;
+}
+
+function fromApi(api: ApiStoreSetup): StoreSetupData {
+  return {
+    profile: api.storeProfile ?? undefined,
+    logoUploaded: Boolean(api.storeLogoUrl),
+    logoUrl: api.storeLogoUrl ?? undefined,
+    coverImageUploaded: Boolean(api.storeCoverImageUrl),
+    coverImageUrl: api.storeCoverImageUrl ?? undefined,
+    address: api.storeSetupAddress ?? undefined,
+    operatingHours: api.operatingHours ?? undefined,
+    holidays: api.holidays ?? [],
+    delivery: api.deliverySettings ?? undefined,
+    serviceAvailability: api.serviceAvailability ?? undefined,
+    storeStatus: api.storeStatus,
+    tempClosure: api.tempClosure ?? undefined,
+    setupCompletedAt: api.storeSetupCompletedAt,
+  };
+}
 
 export function StoreSetupProvider({ children }: { children: React.ReactNode }) {
-  const [data, setData] = useState<StoreSetupData>({
-    holidays: DEFAULT_HOLIDAYS,
-    storeStatus: 'open',
-  });
+  const [data, setData] = useState<StoreSetupData>(EMPTY_DATA);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // StoreSetupContext previously never talked to the backend at all — every field
+  // (profile, logo/cover, address, hours, delivery, availability, status) only ever
+  // held whatever was typed in the CURRENT app session, reset to empty on every app
+  // restart. That's why the Dashboard's "Setup Checklist" and the empty/main/closed
+  // view it picks always looked wrong: they read this context, which had no way of
+  // knowing what was actually saved server-side. Hydrate from the real backend
+  // instead, same pattern as ProductCatalogContext/RegistrationContext.
+  const refresh = useCallback(async () => {
+    try {
+      const { data: remote } = await api.get<ApiStoreSetup>('/vendor/store-setup');
+      setData(fromApi(remote));
+    } catch {
+      // Not yet an approved vendor (403), not authenticated yet (401), or offline —
+      // in every case the right fallback is the empty local state, not an error.
+    }
+  }, []);
+
+  useEffect(() => {
+    setIsLoading(true);
+    refresh().finally(() => setIsLoading(false));
+  }, [refresh]);
 
   const updateProfile = useCallback((value: StoreProfileData) => {
     setData(prev => ({ ...prev, profile: value }));
@@ -178,6 +232,8 @@ export function StoreSetupProvider({ children }: { children: React.ReactNode }) 
   const value = useMemo(
     () => ({
       data,
+      isLoading,
+      refresh,
       updateProfile,
       setLogoUploaded,
       setCoverImageUploaded,
@@ -192,6 +248,8 @@ export function StoreSetupProvider({ children }: { children: React.ReactNode }) 
     }),
     [
       data,
+      isLoading,
+      refresh,
       updateProfile,
       setLogoUploaded,
       setCoverImageUploaded,

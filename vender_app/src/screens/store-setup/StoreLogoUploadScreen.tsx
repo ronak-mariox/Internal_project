@@ -7,6 +7,7 @@ import { Icon, IconName } from '../../icons/Icon';
 import { useStoreSetup } from '../../context/StoreSetupContext';
 import { pickAndUploadLogo } from '../../services/storeSetupUpload';
 import { getApiErrorMessage } from '../../services/api';
+import { resolveAssetUrl } from '../../utils/resolveAssetUrl';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'StoreLogoUpload'>;
@@ -59,7 +60,7 @@ export function StoreLogoUploadScreen({ navigation }: Props) {
               {uploading ? (
                 <ActivityIndicator color={colors.white} />
               ) : data.logoUrl ? (
-                <Image source={{ uri: data.logoUrl }} style={styles.avatarImage} />
+                <Image source={{ uri: resolveAssetUrl(data.logoUrl) }} style={styles.avatarImage} />
               ) : (
                 <Icon name="home" size={52} color={colors.white} />
               )}

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
@@ -18,6 +19,7 @@ import { Badge, Button, MetricCard, PipelineTile } from '../../components';
 import { Icon, IconName } from '../../icons/Icon';
 import { useStoreSetup } from '../../context/StoreSetupContext';
 import { useRegistration } from '../../context/RegistrationContext';
+import { useProductCatalog } from '../../context/ProductCatalogContext';
 import { ORDER_STATUS_META, useOrders } from '../../context/OrdersContext';
 import { useNotifications } from '../../context/NotificationsContext';
 import { useDisputes } from '../../context/DisputesContext';
@@ -66,6 +68,18 @@ export function DashboardScreen({ navigation }: Props) {
     const timer = setTimeout(() => setBooting(false), 900);
     return () => clearTimeout(timer);
   }, []);
+
+  // StoreSetupContext only fetches once when the app boots (which may be before the
+  // vendor has even logged in, or before this store's setup was last changed) — so
+  // without this, returning to Dashboard after completing a setup step (or after any
+  // change made elsewhere) could still show stale checklist/view state. Refetch every
+  // time Dashboard actually gains focus, the moment accuracy matters most.
+  useFocusEffect(
+    useCallback(() => {
+      storeSetup.refresh();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []),
+  );
 
   // Defense in depth: business registration + admin approval is mandatory before the
   // app is usable. Every known entry point already routes correctly, but this guard
@@ -169,7 +183,7 @@ export function DashboardScreen({ navigation }: Props) {
     comingSoon(label);
   }
 
-  if (booting || resolvedView === 'loading') {
+  if (booting || storeSetup.isLoading || resolvedView === 'loading') {
     return <LoadingDashboard storeName={storeName} />;
   }
 
@@ -707,10 +721,11 @@ function EmptySetupDashboard({
   navigation: Props['navigation'];
 }) {
   const storeSetup = useStoreSetup();
+  const { products } = useProductCatalog();
   const checklist = [
     {
       label: 'Add your first product',
-      done: false,
+      done: products.length > 0,
       action: 'Add Now',
       onPress: () => onQuickAction('Add Product'),
     },
