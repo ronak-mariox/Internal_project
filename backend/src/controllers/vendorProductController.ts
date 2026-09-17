@@ -5,6 +5,7 @@ import { HttpError } from '../lib/httpError';
 import { toSafeJson } from '../lib/sanitize';
 import { publicUrlFor } from '../lib/upload';
 import { notifyVendor } from '../lib/vendorNotify';
+import { StockAdjustment, type StockEventType } from '../models/StockAdjustment';
 
 /** Enforces the intended flow: approved registration first, then store setup,
  * only then can a vendor start listing products — a store with no profile,
@@ -36,6 +37,15 @@ export async function getMyProduct(req: Request, res: Response) {
   const product = await Product.findOne({ _id: req.params.id, vendorId: req.user!.id });
   if (!product) throw new HttpError(404, 'Product not found');
   res.json(toSafeJson(product));
+}
+
+export async function getStockHistory(req: Request, res: Response) {
+  const { productId } = req.query as { productId?: string };
+  const filter: Record<string, unknown> = { vendorId: req.user!.id };
+  if (productId) filter.productId = productId;
+
+  const events = await StockAdjustment.find(filter).sort({ createdAt: -1 }).limit(200);
+  res.json(events.map((e) => toSafeJson(e)));
 }
 
 export async function createProduct(req: Request, res: Response) {
@@ -131,13 +141,34 @@ export async function updateStock(req: Request, res: Response) {
   const product = await Product.findOne({ _id: req.params.id, vendorId: req.user!.id });
   if (!product) throw new HttpError(404, 'Product not found');
 
-  const { variantId, stock } = req.body as { variantId: string; stock: number };
+  const { variantId, stock, reason, type, reference } = req.body as {
+    variantId: string;
+    stock: number;
+    reason?: string;
+    type?: StockEventType;
+    reference?: string;
+  };
   const variant = product.variants.find((v) => v.id === variantId);
   if (!variant) throw new HttpError(404, 'Variant not found');
 
   const previousStock = variant.stock;
   variant.stock = stock;
   await product.save();
+
+  const delta = stock - previousStock;
+  if (delta !== 0) {
+    await StockAdjustment.create({
+      vendorId: product.vendorId,
+      productId: product._id as never,
+      productName: product.name,
+      type: type ?? 'adjustment',
+      delta,
+      afterStock: stock,
+      reason: reason || 'Stock updated',
+      reference,
+      actor: 'You',
+    });
+  }
 
   // Only fire once per threshold crossing (previous stock was above it) —
   // otherwise every subsequent stock edit while already low would re-notify.

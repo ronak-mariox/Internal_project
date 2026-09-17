@@ -21,6 +21,8 @@ vendorProductRouter.post(
   asyncHandler(ctrl.uploadImage),
 );
 
+vendorProductRouter.get('/stock-history', asyncHandler(ctrl.getStockHistory));
+
 vendorProductRouter.post(
   '/',
   body('categoryId').isString().notEmpty().withMessage('Select a category'),
@@ -39,6 +41,9 @@ vendorProductRouter.patch(
   param('id').isString().notEmpty(),
   body('variantId').isString().notEmpty(),
   body('stock').isInt({ min: 0 }),
+  body('reason').optional().isString().trim(),
+  body('type').optional().isIn(['purchase', 'sale', 'adjustment', 'return', 'damage', 'bulk', 'correction']),
+  body('reference').optional().isString().trim(),
   handleValidation,
   asyncHandler(ctrl.updateStock),
 );
