@@ -13,6 +13,7 @@ import { customerAddressRouter } from './customerAddress';
 import { customerCartRouter } from './customerCart';
 import { customerOrderRouter } from './customerOrders';
 import { customerNotificationRouter } from './customerNotifications';
+import { customerWishlistRouter } from './customerWishlist';
 
 export const customerRouter = Router();
 
@@ -92,3 +93,4 @@ customerRouter.use('/addresses', customerAddressRouter);
 customerRouter.use('/cart', customerCartRouter);
 customerRouter.use('/orders', customerOrderRouter);
 customerRouter.use('/notifications', customerNotificationRouter);
+customerRouter.use('/wishlist', customerWishlistRouter);

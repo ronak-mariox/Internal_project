@@ -1,4 +1,4 @@
-import { Schema, model } from 'mongoose';
+import { Schema, model, Types } from 'mongoose';
 
 export interface CustomerDoc {
   _id: unknown;
@@ -9,6 +9,7 @@ export interface CustomerDoc {
   gender?: 'female' | 'male' | 'other';
   avatarUrl?: string;
   status: 'active' | 'blocked';
+  wishlist: Types.ObjectId[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -22,6 +23,7 @@ const customerSchema = new Schema<CustomerDoc>(
     gender: { type: String, enum: ['female', 'male', 'other'] },
     avatarUrl: String,
     status: { type: String, enum: ['active', 'blocked'], default: 'active' },
+    wishlist: { type: [Schema.Types.ObjectId], ref: 'Product', default: [] },
   },
   { timestamps: true },
 );

@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { Category } from '../models/Category';
+import { Customer } from '../models/Customer';
 import { Product } from '../models/Product';
 import { Review } from '../models/Review';
 import { toSafeJson } from '../lib/sanitize';
@@ -53,7 +54,7 @@ export async function getProduct(req: Request, res: Response) {
   const product = await Product.findOne({ _id: req.params.id, status: 'active' });
   if (!product) throw new HttpError(404, 'Product not found');
 
-  const [similar, ratingAgg, reviews] = await Promise.all([
+  const [similar, ratingAgg, reviews, customer] = await Promise.all([
     Product.find({
       _id: { $ne: product._id },
       categoryId: product.categoryId,
@@ -65,17 +66,20 @@ export async function getProduct(req: Request, res: Response) {
       { $group: { _id: null, avg: { $avg: '$rating' }, count: { $sum: 1 } } },
     ]),
     Review.find({ productId: product._id as never }).sort({ createdAt: -1 }).limit(10),
+    Customer.findById(req.user!.id),
   ]);
 
   const rating = ratingAgg[0]
     ? { avg: Math.round(ratingAgg[0].avg * 10) / 10, count: ratingAgg[0].count }
     : { avg: 0, count: 0 };
+  const isWishlisted = (customer?.wishlist ?? []).some((id) => String(id) === String(product._id));
 
   res.json({
     product: toSafeJson(product),
     similar: similar.map((p) => toSafeJson(p)),
     rating,
     reviews: reviews.map((r) => toSafeJson(r)),
+    isWishlisted,
   });
 }
 
