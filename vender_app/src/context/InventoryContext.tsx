@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useProductCatalog } from './ProductCatalogContext';
 import { api } from '../services/api';
 
@@ -17,12 +17,32 @@ export type StockEvent = {
   timestamp: number;
 };
 
-// NOTE: there is no backend stock-ledger/audit-log model. This event list is an in-memory-only
-// client-side log of stock changes made *during this app session* — it is not persisted, has no
-// server equivalent, and resets on app restart. The stock numbers it describes are real (backed
-// by `PATCH /vendor/products/:id/stock`); only this history trail is a client-side convenience.
-function seedEvents(): StockEvent[] {
-  return [];
+interface RawStockEvent {
+  id: string;
+  productId: string;
+  productName: string;
+  type: StockEventType;
+  delta: number;
+  afterStock: number;
+  reason: string;
+  reference?: string;
+  actor: 'You' | 'System';
+  createdAt: string;
+}
+
+function toStockEvent(raw: RawStockEvent): StockEvent {
+  return {
+    id: raw.id,
+    productId: raw.productId,
+    productName: raw.productName,
+    type: raw.type,
+    delta: raw.delta,
+    afterStock: raw.afterStock,
+    reason: raw.reason,
+    reference: raw.reference,
+    actor: raw.actor,
+    timestamp: new Date(raw.createdAt).getTime(),
+  };
 }
 
 type RecordStockChangeParams = {
@@ -38,16 +58,26 @@ type InventoryContextValue = {
   events: StockEvent[];
   recordStockChange: (params: RecordStockChangeParams) => Promise<{ wentOutOfStock: boolean } | undefined>;
   eventsForProduct: (productId: string) => StockEvent[];
+  refreshEvents: () => Promise<void>;
 };
 
 const InventoryContext = createContext<InventoryContextValue | null>(null);
 
 export function InventoryProvider({ children }: { children: React.ReactNode }) {
   const { products, refreshProducts } = useProductCatalog();
-  const [events, setEvents] = useState<StockEvent[]>(seedEvents);
+  const [events, setEvents] = useState<StockEvent[]>([]);
+
+  const refreshEvents = useCallback(async () => {
+    const { data } = await api.get<RawStockEvent[]>('/vendor/products/stock-history');
+    setEvents(data.map(toStockEvent));
+  }, []);
+
+  useEffect(() => {
+    refreshEvents().catch(() => {});
+  }, [refreshEvents]);
 
   const recordStockChange = useCallback(
-    async ({ productId, newStock, reason, type = 'adjustment', reference, actor = 'You' }: RecordStockChangeParams) => {
+    async ({ productId, newStock, reason, type = 'adjustment', reference }: RecordStockChangeParams) => {
       const product = products.find(item => item.id === productId);
       if (!product) return undefined;
 
@@ -55,35 +85,21 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       if (!primaryVariantId) return undefined;
 
       const clampedStock = Math.max(0, newStock);
-      const delta = clampedStock - product.stock;
       const wentOutOfStock = clampedStock === 0 && product.stock > 0;
 
       await api.patch(`/vendor/products/${productId}/stock`, {
         variantId: primaryVariantId,
         stock: clampedStock,
+        reason,
+        type,
+        reference,
       });
 
-      await refreshProducts();
-
-      setEvents(prev => [
-        {
-          id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          productId,
-          productName: product.name,
-          type,
-          delta,
-          afterStock: clampedStock,
-          reason,
-          reference,
-          actor,
-          timestamp: Date.now(),
-        },
-        ...prev,
-      ]);
+      await Promise.all([refreshProducts(), refreshEvents()]);
 
       return { wentOutOfStock };
     },
-    [products, refreshProducts],
+    [products, refreshProducts, refreshEvents],
   );
 
   const eventsForProduct = useCallback(
@@ -92,8 +108,8 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
   );
 
   const value = useMemo(
-    () => ({ events, recordStockChange, eventsForProduct }),
-    [events, recordStockChange, eventsForProduct],
+    () => ({ events, recordStockChange, eventsForProduct, refreshEvents }),
+    [events, recordStockChange, eventsForProduct, refreshEvents],
   );
 
   return <InventoryContext.Provider value={value}>{children}</InventoryContext.Provider>;
