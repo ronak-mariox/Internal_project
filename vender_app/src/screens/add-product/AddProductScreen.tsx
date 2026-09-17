@@ -1,9 +1,11 @@
-import React from 'react';
-import { Alert, ScrollView, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, ScrollView, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { NavHeader, ScreenContainer } from '../../components';
 import { Icon, IconName } from '../../icons/Icon';
+import { useStoreSetup } from '../../context/StoreSetupContext';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'AddProduct'>;
@@ -62,12 +64,69 @@ const METHODS: {
 ];
 
 export function AddProductScreen({ navigation }: Props) {
+  const storeSetup = useStoreSetup();
+  const [checking, setChecking] = useState(true);
+  const alerted = useRef(false);
+
+  // Enforces the intended flow (registration -> store setup -> products): this is
+  // the single screen every "Add Product" entry point funnels through (Dashboard,
+  // the product catalog's "+" button, and the product-approval notification's
+  // "Add Another"), so gating here catches all of them at once instead of
+  // duplicating the check at every call site. The backend enforces the same rule
+  // on the actual create call — this is just to redirect before the vendor wastes
+  // time filling out the 10-step wizard only to be blocked at the end.
+  useFocusEffect(
+    useCallback(() => {
+      alerted.current = false;
+      setChecking(true);
+      storeSetup.refresh().finally(() => setChecking(false));
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []),
+  );
+
+  useEffect(() => {
+    if (checking || alerted.current) return;
+    if (!storeSetup.data.setupCompletedAt) {
+      alerted.current = true;
+      Alert.alert(
+        'Finish store setup first',
+        "Complete your store setup so customers can find and order from you before you start adding products.",
+        [
+          { text: 'Not now', style: 'cancel', onPress: () => navigation.goBack() },
+          { text: 'Set Up Now', onPress: () => navigation.replace('StoreSetupIntro') },
+        ],
+        { cancelable: false },
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checking, storeSetup.data.setupCompletedAt]);
+
   function handleMethod(key: string) {
     if (key === 'manual') {
       navigation.navigate('ProductBasicInfo');
       return;
     }
     Alert.alert('Coming soon', 'This add-product method is not available in this preview yet.');
+  }
+
+  if (checking) {
+    return (
+      <ScreenContainer backgroundColor={colors.white}>
+        <NavHeader title="Add Product" onBack={() => navigation.goBack()} />
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator color={colors.primary} size="large" />
+        </View>
+      </ScreenContainer>
+    );
+  }
+
+  if (!storeSetup.data.setupCompletedAt) {
+    // Alert above is already showing / about to show — render nothing behind it.
+    return (
+      <ScreenContainer backgroundColor={colors.white}>
+        <NavHeader title="Add Product" onBack={() => navigation.goBack()} />
+      </ScreenContainer>
+    );
   }
 
   return (
@@ -121,6 +180,11 @@ export function AddProductScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
+  loadingWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   content: {
     paddingHorizontal: spacing.xxl,
     paddingTop: spacing.xxl,

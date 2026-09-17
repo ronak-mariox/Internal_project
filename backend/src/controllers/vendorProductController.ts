@@ -5,11 +5,19 @@ import { HttpError } from '../lib/httpError';
 import { toSafeJson } from '../lib/sanitize';
 import { publicUrlFor } from '../lib/upload';
 
-async function assertApprovedVendor(vendorId: string) {
+/** Enforces the intended flow: approved registration first, then store setup,
+ * only then can a vendor start listing products — a store with no profile,
+ * address, or delivery settings has nothing for a customer-facing listing to
+ * attach to. Only gates product CREATION; managing already-created products
+ * (which could only exist if this passed once already) isn't re-checked. */
+async function assertReadyToAddProducts(vendorId: string) {
   const vendor = await Vendor.findById(vendorId);
   if (!vendor) throw new HttpError(404, 'Vendor not found');
   if (vendor.status !== 'active') {
     throw new HttpError(403, 'Your vendor account must be approved before you can manage products');
+  }
+  if (!vendor.storeSetupCompletedAt) {
+    throw new HttpError(409, 'Complete your store setup before adding products', { reason: 'store_setup_incomplete' });
   }
 }
 
@@ -30,7 +38,7 @@ export async function getMyProduct(req: Request, res: Response) {
 }
 
 export async function createProduct(req: Request, res: Response) {
-  await assertApprovedVendor(req.user!.id);
+  await assertReadyToAddProducts(req.user!.id);
   const {
     categoryId,
     subcategoryId,
