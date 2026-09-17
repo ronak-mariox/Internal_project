@@ -1,19 +1,56 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Image, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
+import { useVendorAuth } from '../../context/VendorAuthContext';
+import { resolveVendorEntryRoute } from '../../utils/vendorRouting';
 import { colors, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Splash'>;
 
+const MIN_VISIBLE_MS = 2200;
+
 export function SplashScreen({ navigation }: Props) {
+  const { isLoading, isAuthenticated } = useVendorAuth();
+  const [minTimeElapsed, setMinTimeElapsed] = useState(false);
+  const navigated = useRef(false);
+
+  // Shows the splash for a fixed minimum duration regardless of how fast the
+  // session-restore check finishes, so it never just flashes.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      navigation.replace('Welcome');
-    }, 2200);
+    const timer = setTimeout(() => setMinTimeElapsed(true), MIN_VISIBLE_MS);
     return () => clearTimeout(timer);
-  }, [navigation]);
+  }, []);
+
+  // Previously this always sent every vendor to 'Welcome' once the timer above
+  // fired, ignoring VendorAuthContext entirely — so a vendor with a perfectly
+  // valid restored session was forced to log in again on every app open. Now it
+  // waits for BOTH the minimum splash duration AND the real session-restore
+  // check (VendorAuthContext's own effect, which already retries past network
+  // blips without dropping a valid session) before deciding where to go.
+  useEffect(() => {
+    if (isLoading || !minTimeElapsed || navigated.current) return;
+    navigated.current = true;
+
+    if (!isAuthenticated) {
+      navigation.replace('Welcome');
+      return;
+    }
+
+    resolveVendorEntryRoute()
+      .then(route => {
+        (navigation as unknown as { replace: (name: string, params?: object) => void }).replace(
+          route.name,
+          route.params,
+        );
+      })
+      .catch(() => {
+        // Couldn't reach the server to resolve the exact step — fall back to
+        // Welcome rather than guessing; the vendor can log in again from there.
+        navigation.replace('Welcome');
+      });
+  }, [isLoading, minTimeElapsed, isAuthenticated, navigation]);
 
   return (
     <View style={styles.root}>
