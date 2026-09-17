@@ -11,6 +11,32 @@ declare const process: {
   exitCode?: number;
 };
 
+// No real product photography exists for these demo listings yet (vendors upload
+// their own via the app), so each gets a distinct, clearly-labelled placeholder
+// instead of every product sharing the same generic image. Colour-coded per
+// category so the catalog also reads visually distinct browsing by category.
+const CATEGORY_PLACEHOLDER_COLORS: Record<string, string> = {
+  grocery: '1CA672',
+  snacks: 'F59E0B',
+  'personal-care': 'EC4899',
+  household: '0EA5E9',
+  'baby-pet': '8B5CF6',
+  electronics: '334155',
+  mobiles: '1E293B',
+  fashion: 'DB2777',
+  kids: 'FB923C',
+  healthcare: '059669',
+  gifting: 'D946EF',
+  paanstore: '65A30D',
+  monsoon: '2563EB',
+};
+
+function placeholderImageUrl(name: string, categorySlug: string): string {
+  const bg = CATEGORY_PLACEHOLDER_COLORS[categorySlug] ?? '6B7280';
+  // Force PNG (placehold.co defaults to SVG, which React Native's <Image> can't render).
+  return `https://placehold.co/600x600/${bg}/FFFFFF/png?text=${encodeURIComponent(name)}&font=roboto`;
+}
+
 /**
  * Dev-only convenience seed for the core-commerce domain (categories, an
  * approved demo vendor, products, a coupon) so the customer/vendor/admin apps
@@ -266,19 +292,32 @@ async function main() {
         brand: def.brand,
         countryOfOrigin: 'India',
         unit: def.variants[0].label,
-        images: [],
+        images: [placeholderImageUrl(def.name, def.category)],
         variants: def.variants.map((v) => ({ ...v, stock: 100 })),
         tags: def.tags,
         taxRate: 5,
         status: 'active',
         isAvailable: true,
       });
-    } else if (!product.brand) {
-      // Backfill brand/countryOfOrigin onto products created by an older seed run
-      // (before these fields existed here) so the highlights section has real values.
-      product.brand = def.brand;
-      product.countryOfOrigin = 'India';
-      await product.save();
+    } else {
+      // Backfill fields onto products created by an older seed run (before these
+      // existed here) so highlights and per-product images reflect real values.
+      let changed = false;
+      if (!product.brand) {
+        product.brand = def.brand;
+        product.countryOfOrigin = 'India';
+        changed = true;
+      }
+      const hasNoImage = product.images.length === 0;
+      // Earlier run of this script saved placehold.co's default SVG format, which
+      // React Native's <Image> can't render — regenerate those onto the PNG variant.
+      const hasUnrenderableSvgPlaceholder =
+        product.images[0]?.includes('placehold.co') && !product.images[0].includes('/png');
+      if (hasNoImage || hasUnrenderableSvgPlaceholder) {
+        product.images = [placeholderImageUrl(def.name, def.category)];
+        changed = true;
+      }
+      if (changed) await product.save();
     }
     products[def.name] = product;
   }
