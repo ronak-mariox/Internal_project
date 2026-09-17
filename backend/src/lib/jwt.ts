@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { env } from './env';
 
@@ -17,7 +18,14 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
 }
 
 export function signRefreshToken(payload: AccessTokenPayload): string {
-  return jwt.sign(payload, env.jwtRefreshSecret, { expiresIn: `${env.refreshTokenTtlDays}d` });
+  // `jti` guarantees two refresh tokens for the same user are never byte-identical.
+  // Without it, two tokens issued in the same wall-clock second (jwt's `iat` only
+  // has 1-second resolution) would be identical strings, and since RefreshToken.tokenHash
+  // is uniquely indexed, the second insert would throw — surfacing to the client as a
+  // hard "invalid refresh token" rejection and forcing a needless re-login.
+  return jwt.sign({ ...payload, jti: crypto.randomUUID() }, env.jwtRefreshSecret, {
+    expiresIn: `${env.refreshTokenTtlDays}d`,
+  });
 }
 
 export function verifyRefreshToken(token: string): AccessTokenPayload {
