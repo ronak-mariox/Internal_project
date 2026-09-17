@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { Button } from '../../components';
 import { Icon } from '../../icons/Icon';
 import { useProductCatalog } from '../../context/ProductCatalogContext';
+import { getApiErrorMessage } from '../../services/api';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 import { PricingBackHeader } from './PricingBackHeader';
 import { PriceInputField } from './PriceInputField';
@@ -19,6 +20,7 @@ export function SellingPriceEditorScreen({ navigation, route }: Props) {
   const { products, updateProduct } = useProductCatalog();
   const product = products.find(item => item.id === productId);
   const [spText, setSpText] = useState(String(product?.sellingPrice ?? ''));
+  const [saving, setSaving] = useState(false);
 
   if (!product) return null;
 
@@ -29,14 +31,21 @@ export function SellingPriceEditorScreen({ navigation, route }: Props) {
   const payout = sp - platformFee;
   const healthy = discountPct <= 20;
 
-  function handleSave() {
-    if (invalid) return;
-    updateProduct(productId, { sellingPrice: sp, updatedAt: Date.now() });
-    navigation.replace('PriceUpdated', {
-      productId,
-      headline: 'Selling Price',
-      message: `Selling price for ${product?.name} has been updated to ₹${sp}.`,
-    });
+  async function handleSave() {
+    if (invalid || saving) return;
+    setSaving(true);
+    try {
+      await updateProduct(productId, { sellingPrice: sp, updatedAt: Date.now() });
+      navigation.replace('PriceUpdated', {
+        productId,
+        headline: 'Selling Price',
+        message: `Selling price for ${product?.name} has been updated to ₹${sp}.`,
+      });
+    } catch (err) {
+      Alert.alert('Could not save', getApiErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -77,7 +86,7 @@ export function SellingPriceEditorScreen({ navigation, route }: Props) {
       </ScrollView>
 
       <View style={styles.footer}>
-        <Button label="Save" onPress={handleSave} disabled={invalid} />
+        <Button label="Save" onPress={handleSave} disabled={invalid || saving} loading={saving} />
       </View>
     </SafeAreaView>
   );

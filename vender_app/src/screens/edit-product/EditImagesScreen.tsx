@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { Button, NavHeader } from '../../components';
 import { Icon } from '../../icons/Icon';
 import { useProductCatalog } from '../../context/ProductCatalogContext';
+import { getApiErrorMessage } from '../../services/api';
 import { colors, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'EditImages'>;
@@ -25,6 +26,7 @@ export function EditImagesScreen({ navigation, route }: Props) {
   const product = products.find(item => item.id === productId);
 
   const [galleryCount, setGalleryCount] = useState(product?.galleryCount ?? 0);
+  const [saving, setSaving] = useState(false);
 
   if (!product) {
     return (
@@ -34,9 +36,20 @@ export function EditImagesScreen({ navigation, route }: Props) {
     );
   }
 
-  function handleSave() {
-    updateProduct(productId, { galleryCount });
-    navigation.goBack();
+  async function handleSave() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      // Note: there's no real image picker wired up on this screen yet (it only tracks a
+      // gallery slot count), and the backend has no field for that count on its own — this
+      // is a local-only preview until real image capture/upload is implemented.
+      await updateProduct(productId, { galleryCount });
+      navigation.goBack();
+    } catch (err) {
+      Alert.alert('Could not save', getApiErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
   }
 
   const slots = Array.from({ length: MAX_GALLERY });
@@ -116,7 +129,7 @@ export function EditImagesScreen({ navigation, route }: Props) {
         </View>
 
         <View style={styles.footer}>
-          <Button label="Save Images" onPress={handleSave} />
+          <Button label="Save Images" onPress={handleSave} loading={saving} disabled={saving} />
         </View>
       </ScrollView>
     </SafeAreaView>

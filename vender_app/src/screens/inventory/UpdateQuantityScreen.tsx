@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
@@ -8,6 +8,7 @@ import { Icon } from '../../icons/Icon';
 import { useProductCatalog } from '../../context/ProductCatalogContext';
 import { useInventory } from '../../context/InventoryContext';
 import { STOCK_REASONS } from '../../utils/inventory';
+import { getApiErrorMessage } from '../../services/api';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'UpdateQuantity'>;
@@ -31,6 +32,7 @@ export function UpdateQuantityScreen({ navigation, route }: Props) {
   const [reason, setReason] = useState(STOCK_REASONS[0]);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | undefined>();
+  const [saving, setSaving] = useState(false);
 
   if (!product) {
     return (
@@ -50,22 +52,30 @@ export function UpdateQuantityScreen({ navigation, route }: Props) {
     mode === 'set' ? amount : mode === 'add' ? product.stock + amount : Math.max(0, product.stock - amount);
   const delta = newQuantity - product.stock;
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!reason) {
       setError('Select a reason');
       return;
     }
-    const result = recordStockChange({
-      productId,
-      newStock: newQuantity,
-      reason,
-      type: delta >= 0 ? 'purchase' : 'adjustment',
-      reference: notes.trim() || undefined,
-    });
-    if (result?.wentOutOfStock) {
-      navigation.replace('OOSConfirmation', { productId });
-    } else {
-      navigation.goBack();
+    if (saving) return;
+    setSaving(true);
+    try {
+      const result = await recordStockChange({
+        productId,
+        newStock: newQuantity,
+        reason,
+        type: delta >= 0 ? 'purchase' : 'adjustment',
+        reference: notes.trim() || undefined,
+      });
+      if (result?.wentOutOfStock) {
+        navigation.replace('OOSConfirmation', { productId });
+      } else {
+        navigation.goBack();
+      }
+    } catch (err) {
+      Alert.alert('Could not update stock', getApiErrorMessage(err));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -146,7 +156,7 @@ export function UpdateQuantityScreen({ navigation, route }: Props) {
         <Input label="Notes" value={notes} onChangeText={setNotes} placeholder="e.g. Invoice #INV-2024-0891" />
 
         <View style={styles.footer}>
-          <Button label="Update Stock" onPress={handleSubmit} />
+          <Button label="Update Stock" onPress={handleSubmit} loading={saving} disabled={saving} />
         </View>
       </ScrollView>
     </SafeAreaView>

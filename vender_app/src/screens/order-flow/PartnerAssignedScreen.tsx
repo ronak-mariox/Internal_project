@@ -13,15 +13,15 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'PartnerAssigned'>;
 const NEXT_STEPS = [
   'Keep {order} at the handover counter',
   'Have order receipt ready for verification',
-  'Partner will arrive in ~4 minutes',
-  'Confirm handover when partner arrives',
+  'You will be notified once a partner is assigned',
+  'Confirm handover when the partner arrives',
 ];
 
 export function PartnerAssignedScreen({ navigation, route }: Props) {
   const { orderId } = route.params;
   const { getOrder } = useOrders();
   const order = getOrder(orderId);
-  if (!order || !order.deliveryPartner) return null;
+  if (!order) return null;
 
   const distanceLabel = (order.distanceLabel ?? '3.0 km away').replace(' away', '');
 
@@ -36,7 +36,7 @@ export function PartnerAssignedScreen({ navigation, route }: Props) {
 
       <View style={styles.banner}>
         <Icon name="check-circle" size={16} color={colors.primaryDark} />
-        <Text style={styles.bannerText}>Delivery partner assigned by system!</Text>
+        <Text style={styles.bannerText}>Delivery partner will be assigned shortly!</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
@@ -46,10 +46,8 @@ export function PartnerAssignedScreen({ navigation, route }: Props) {
               <Icon name="bike" size={28} color={colors.white} />
             </View>
             <View style={styles.partnerTextColumn}>
-              <Text style={styles.partnerName}>{order.deliveryPartner.name}</Text>
-              <Text style={styles.partnerRating}>
-                <Text style={styles.starText}>★★★★★</Text> 4.8 · 2,341 deliveries
-              </Text>
+              <Text style={styles.partnerName}>Pending assignment</Text>
+              <Text style={styles.partnerRating}>Details will appear here once a partner accepts</Text>
             </View>
             <Pressable style={styles.callButton} onPress={() => Alert.alert('Call Partner', 'Coming soon.')}>
               <Icon name="phone" size={16} color={colors.white} />
@@ -58,13 +56,11 @@ export function PartnerAssignedScreen({ navigation, route }: Props) {
           <View style={styles.divider} />
           <View style={styles.row}>
             <Text style={styles.rowLabel}>Vehicle</Text>
-            <Text style={styles.rowValue}>
-              {order.deliveryPartner.vehicle} · {order.deliveryPartner.plate}
-            </Text>
+            <Text style={styles.rowValue}>—</Text>
           </View>
           <View style={styles.row}>
             <Text style={styles.rowLabel}>ETA to store</Text>
-            <Text style={styles.rowValue}>4 minutes</Text>
+            <Text style={styles.rowValue}>—</Text>
           </View>
           <View style={[styles.row, styles.rowLast]}>
             <Text style={styles.rowLabel}>Delivery to</Text>

@@ -16,17 +16,19 @@ const NEARBY_PARTNERS = [
 
 export function DispatchQueueScreen({ navigation, route }: Props) {
   const { orderId } = route.params;
-  const { getOrder, ordersByStatus, assignDeliveryPartner } = useOrders();
+  const { getOrder, ordersByStatus } = useOrders();
   const order = getOrder(orderId);
   const otherQueued = ordersByStatus(['ready-for-dispatch', 'dispatched']).filter(item => item.id !== orderId);
 
+  // There's no real driver-assignment system wired up on the backend yet, so this screen no
+  // longer fabricates a delivery partner — it just paces on to the next step in the flow, which
+  // now shows a generic "partner will be assigned shortly" placeholder instead of fake details.
   useEffect(() => {
     const timer = setTimeout(() => {
-      assignDeliveryPartner(orderId, { name: 'Raju Sharma', vehicle: 'Hero Splendor', plate: 'DL 4C AR 2211' });
       navigation.replace('PartnerAssigned', { orderId });
     }, 1800);
     return () => clearTimeout(timer);
-  }, [assignDeliveryPartner, navigation, orderId]);
+  }, [navigation, orderId]);
 
   if (!order) return null;
 

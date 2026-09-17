@@ -55,7 +55,9 @@ export function NewOrderReceivedScreen({ navigation, route }: Props) {
           <View style={styles.orderTopRow}>
             <View>
               <Text style={styles.orderId}>ORD-2026-{order.id.replace('ORD-', '')}</Text>
-              <Text style={styles.orderMeta}>06 Sep 2026, {order.timeLabel} · UPI paid</Text>
+              <Text style={styles.orderMeta}>
+                {order.timeLabel} · {order.paymentMethod}
+              </Text>
             </View>
             <Text style={styles.orderAmount}>₹{order.amount}</Text>
           </View>

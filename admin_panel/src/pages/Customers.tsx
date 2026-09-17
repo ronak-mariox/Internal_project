@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Users, UserCheck, UserX, PackageSearch } from 'lucide-react';
+import { Users, UserCheck, UserX, PackageSearch, Loader2, AlertTriangle } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { StatCard } from '@/components/ui/StatCard';
@@ -13,9 +13,11 @@ import { Pagination } from '@/components/ui/Pagination';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Drawer';
-import { customers } from '@/data/customers';
+import { InlineAlert } from '@/components/ui/InlineAlert';
 import type { Customer, CustomerStatus } from '@/types';
 import { formatCurrency, formatDate, timeAgo } from '@/lib/format';
+import { api, ApiError } from '@/lib/api';
+import { avatarColorFor } from '@/lib/avatarColor';
 
 const STATUS_TABS: { value: CustomerStatus | 'all'; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -25,18 +27,80 @@ const STATUS_TABS: { value: CustomerStatus | 'all'; label: string }[] = [
 
 const PAGE_SIZE = 15;
 
+// ---------------------------------------------------------------------------
+// Backend shape (GET /admin/customers)
+// ---------------------------------------------------------------------------
+
+interface ApiCustomer {
+  id: string;
+  phone: string;
+  name?: string;
+  email?: string;
+  status: CustomerStatus;
+  createdAt: string;
+}
+
+function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof ApiError ? err.message : fallback;
+}
+
+function mapCustomer(c: ApiCustomer): Customer {
+  return {
+    id: c.id,
+    name: c.name || c.phone,
+    email: c.email ?? '—',
+    phone: c.phone,
+    avatarColor: avatarColorFor(c.id),
+    // No address/city field on the backend customer record — decorative-only.
+    city: '—',
+    status: c.status,
+    // No order-history data server-side yet; computing it here for potentially
+    // many customers would mean an order fetch per row. CustomerDetail.tsx does
+    // this honestly for a single customer instead.
+    totalOrders: 0,
+    totalSpent: 0,
+    joinedAt: c.createdAt,
+    lastOrderAt: undefined,
+  };
+}
+
 export function Customers() {
+  const [apiCustomers, setApiCustomers] = useState<ApiCustomer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
   const [search, setSearch] = useState('');
   const [statusTab, setStatusTab] = useState<CustomerStatus | 'all'>('all');
   const [page, setPage] = useState(1);
-  const [statusOverrides, setStatusOverrides] = useState<Record<string, CustomerStatus>>({});
   const [blockTarget, setBlockTarget] = useState<Customer | null>(null);
 
-  const effectiveStatus = (c: Customer) => statusOverrides[c.id] ?? c.status;
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const data = await api.get<ApiCustomer[]>('/admin/customers');
+        if (!cancelled) setApiCustomers(data);
+      } catch (err) {
+        if (!cancelled) setLoadError(errorMessage(err, 'Failed to load customers'));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
+
+  const customers = useMemo(() => apiCustomers.map(mapCustomer), [apiCustomers]);
 
   const totalCustomers = customers.length;
-  const activeCount = customers.filter((c) => effectiveStatus(c) === 'active').length;
-  const blockedCount = customers.filter((c) => effectiveStatus(c) === 'blocked').length;
+  const activeCount = customers.filter((c) => c.status === 'active').length;
+  const blockedCount = customers.filter((c) => c.status === 'blocked').length;
 
   const searchFiltered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -48,22 +112,20 @@ export function Customers() {
         c.phone.toLowerCase().includes(q) ||
         c.city.toLowerCase().includes(q),
     );
-  }, [search]);
+  }, [customers, search]);
 
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = { all: searchFiltered.length };
     (['active', 'blocked'] as CustomerStatus[]).forEach((s) => {
-      counts[s] = searchFiltered.filter((c) => effectiveStatus(c) === s).length;
+      counts[s] = searchFiltered.filter((c) => c.status === s).length;
     });
     return counts;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchFiltered, statusOverrides]);
+  }, [searchFiltered]);
 
   const filtered = useMemo(() => {
     if (statusTab === 'all') return searchFiltered;
-    return searchFiltered.filter((c) => effectiveStatus(c) === statusTab);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchFiltered, statusTab, statusOverrides]);
+    return searchFiltered.filter((c) => c.status === statusTab);
+  }, [searchFiltered, statusTab]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -74,16 +136,28 @@ export function Customers() {
     count: statusCounts[t.value] ?? 0,
   }));
 
-  const unblock = (id: string) => setStatusOverrides((prev) => ({ ...prev, [id]: 'active' }));
+  async function setCustomerStatus(id: string, status: CustomerStatus) {
+    setActionError(null);
+    try {
+      const updated = await api.patch<ApiCustomer>(`/admin/customers/${id}/status`, { status });
+      setApiCustomers((prev) => prev.map((c) => (c.id === id ? updated : c)));
+    } catch (err) {
+      setActionError(errorMessage(err, 'Failed to update customer status'));
+    }
+  }
+
+  const unblock = (id: string) => setCustomerStatus(id, 'active');
   const confirmBlock = () => {
     if (!blockTarget) return;
-    setStatusOverrides((prev) => ({ ...prev, [blockTarget.id]: 'blocked' }));
+    setCustomerStatus(blockTarget.id, 'blocked');
     setBlockTarget(null);
   };
 
   return (
     <div>
       <PageHeader title="Customers" subtitle="View and manage the Verdant customer base" />
+
+      {actionError && <InlineAlert message={actionError} className="mb-4" />}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
@@ -133,7 +207,16 @@ export function Customers() {
           />
         </div>
 
-        {paged.length === 0 ? (
+        {loading ? (
+          <EmptyState icon={<Loader2 size={24} className="animate-spin" />} title="Loading customers…" />
+        ) : loadError ? (
+          <EmptyState
+            icon={<AlertTriangle size={24} />}
+            title="Couldn't load customers"
+            description={loadError}
+            action={<Button onClick={() => setReloadKey((k) => k + 1)}>Retry</Button>}
+          />
+        ) : paged.length === 0 ? (
           <EmptyState
             icon={<PackageSearch size={24} />}
             title="No customers found"
@@ -155,64 +238,63 @@ export function Customers() {
               </Tr>
             </Thead>
             <tbody>
-              {paged.map((c) => {
-                const status = effectiveStatus(c);
-                return (
-                  <Tr key={c.id}>
-                    <Td>
-                      <div className="flex items-center gap-3">
-                        <Avatar name={c.name} color={c.avatarColor} size={38} />
-                        <div className="min-w-0">
-                          <Link
-                            to={`/customers/${c.id}`}
-                            className="block truncate font-semibold text-ink-800 hover:text-brand-700"
-                          >
-                            {c.name}
-                          </Link>
-                          <p className="truncate text-[12.5px] text-ink-500">{c.email}</p>
-                        </div>
+              {paged.map((c) => (
+                <Tr key={c.id}>
+                  <Td>
+                    <div className="flex items-center gap-3">
+                      <Avatar name={c.name} color={c.avatarColor} size={38} />
+                      <div className="min-w-0">
+                        <Link
+                          to={`/customers/${c.id}`}
+                          className="block truncate font-semibold text-ink-800 hover:text-brand-700"
+                        >
+                          {c.name}
+                        </Link>
+                        <p className="truncate text-[12.5px] text-ink-500">{c.email}</p>
                       </div>
-                    </Td>
-                    <Td className="text-ink-600">{c.phone}</Td>
-                    <Td className="text-ink-600">{c.city}</Td>
-                    <Td className="text-ink-700">{c.totalOrders}</Td>
-                    <Td className="font-semibold text-ink-800">{formatCurrency(c.totalSpent)}</Td>
-                    <Td className="text-ink-500">{timeAgo(c.lastOrderAt)}</Td>
-                    <Td className="text-ink-500">{formatDate(c.joinedAt)}</Td>
-                    <Td>
-                      <StatusBadge status={status} />
-                    </Td>
-                    <Td className="text-right">
-                      {status === 'blocked' ? (
-                        <button
-                          onClick={() => unblock(c.id)}
-                          className="rounded-md bg-success-surface px-2.5 py-1 text-[11px] font-semibold text-success hover:bg-success/20"
-                        >
-                          Unblock
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => setBlockTarget(c)}
-                          className="rounded-md bg-danger-surface px-2.5 py-1 text-[11px] font-semibold text-danger hover:bg-danger/20"
-                        >
-                          Block
-                        </button>
-                      )}
-                    </Td>
-                  </Tr>
-                );
-              })}
+                    </div>
+                  </Td>
+                  <Td className="text-ink-600">{c.phone}</Td>
+                  <Td className="text-ink-600">{c.city}</Td>
+                  <Td className="text-ink-700">{c.totalOrders}</Td>
+                  <Td className="font-semibold text-ink-800">{formatCurrency(c.totalSpent)}</Td>
+                  <Td className="text-ink-500">{c.lastOrderAt ? timeAgo(c.lastOrderAt) : '—'}</Td>
+                  <Td className="text-ink-500">{formatDate(c.joinedAt)}</Td>
+                  <Td>
+                    <StatusBadge status={c.status} />
+                  </Td>
+                  <Td className="text-right">
+                    {c.status === 'blocked' ? (
+                      <button
+                        onClick={() => unblock(c.id)}
+                        className="rounded-md bg-success-surface px-2.5 py-1 text-[11px] font-semibold text-success hover:bg-success/20"
+                      >
+                        Unblock
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setBlockTarget(c)}
+                        className="rounded-md bg-danger-surface px-2.5 py-1 text-[11px] font-semibold text-danger hover:bg-danger/20"
+                      >
+                        Block
+                      </button>
+                    )}
+                  </Td>
+                </Tr>
+              ))}
             </tbody>
           </Table>
         )}
 
-        <Pagination
-          page={page}
-          pageCount={pageCount}
-          onChange={setPage}
-          total={filtered.length}
-          pageSize={PAGE_SIZE}
-        />
+        {!loading && !loadError && (
+          <Pagination
+            page={page}
+            pageCount={pageCount}
+            onChange={setPage}
+            total={filtered.length}
+            pageSize={PAGE_SIZE}
+          />
+        )}
       </Card>
 
       <Modal

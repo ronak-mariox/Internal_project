@@ -19,7 +19,7 @@ export function last30DaysRevenue() {
     const dayEnd = dayStart + DAY_MS;
     const dayOrders = orders.filter((o) => {
       const t = new Date(o.placedAt).getTime();
-      return t >= dayStart && t < dayEnd && o.status !== 'cancelled' && o.status !== 'failed';
+      return t >= dayStart && t < dayEnd && o.status !== 'cancelled' && o.status !== 'rejected';
     });
     const revenue = dayOrders.reduce((sum, o) => sum + o.total, 0);
     return {
@@ -39,7 +39,7 @@ export function ordersByStatus() {
 export function revenueByCategory() {
   const revenueByProduct = new Map<string, number>();
   for (const o of orders) {
-    if (o.status === 'cancelled' || o.status === 'failed') continue;
+    if (o.status === 'cancelled' || o.status === 'rejected') continue;
     for (const item of o.items) revenueByProduct.set(item.productId, (revenueByProduct.get(item.productId) ?? 0) + item.price * item.qty);
   }
   const byCategory = new Map<string, number>();
@@ -58,13 +58,13 @@ export function topVendorsByRevenue(n = 5) {
 }
 
 export function dashboardKpis() {
-  const activeOrders = orders.filter((o) => !['completed', 'cancelled', 'failed'].includes(o.status)).length;
-  const completedOrders = orders.filter((o) => o.status === 'completed');
+  const activeOrders = orders.filter((o) => !['delivered', 'cancelled', 'rejected'].includes(o.status)).length;
+  const completedOrders = orders.filter((o) => o.status === 'delivered');
   const totalRevenue = completedOrders.reduce((sum, o) => sum + o.total, 0);
   const avgOrderValue = completedOrders.length ? Math.round(totalRevenue / completedOrders.length) : 0;
-  const onlineDrivers = drivers.filter((d) => d.status === 'online' || d.status === 'on-delivery').length;
+  const onlineDrivers = drivers.filter((d) => d.status === 'active').length;
   const pendingVendorApprovals = vendors.filter((v) => v.status === 'pending').length;
-  const cancelledOrders = orders.filter((o) => o.status === 'cancelled' || o.status === 'failed').length;
+  const cancelledOrders = orders.filter((o) => o.status === 'cancelled' || o.status === 'rejected').length;
   const cancellationRate = orders.length ? Math.round((cancelledOrders / orders.length) * 1000) / 10 : 0;
 
   return {

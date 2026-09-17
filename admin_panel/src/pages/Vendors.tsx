@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Store, CheckCircle2, Clock, Ban, Star, Check, X } from 'lucide-react';
+import { Store, CheckCircle2, Clock, Ban, Star, Check, X, Loader2, AlertTriangle } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { StatCard } from '@/components/ui/StatCard';
@@ -12,9 +12,12 @@ import { Tabs, type TabItem } from '@/components/ui/Tabs';
 import { Button } from '@/components/ui/Button';
 import { Pagination } from '@/components/ui/Pagination';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { vendors as seedVendors } from '@/data/vendors';
-import type { Vendor, VendorStatus } from '@/types';
+import { InlineAlert } from '@/components/ui/InlineAlert';
+import type { Vendor, VendorStatus, KycStatus } from '@/types';
 import { formatCurrency } from '@/lib/format';
+import { api } from '@/lib/api';
+import { vendorDisplayName, vendorCity, errorMessage, type ApiVendor as ApiVendorBase } from '@/lib/adminOrders';
+import { avatarColorFor } from '@/lib/avatarColor';
 
 const PAGE_SIZE = 15;
 
@@ -26,16 +29,91 @@ const STATUS_TABS: { value: VendorStatus | 'all'; label: string }[] = [
   { value: 'rejected', label: 'Rejected' },
 ];
 
+// ---------------------------------------------------------------------------
+// Backend shape (GET /admin/vendors) — a superset of adminOrders.ApiVendor so it
+// still satisfies vendorDisplayName/vendorCity's parameter type.
+// ---------------------------------------------------------------------------
+
+interface ApiVendor extends Omit<ApiVendorBase, 'businessInfo'> {
+  email?: string;
+  status: VendorStatus;
+  kycStatus: KycStatus;
+  businessInfo?: {
+    displayName?: string;
+    category?: string;
+    addressLine1?: string;
+    addressLine2?: string;
+    city?: string;
+  };
+  storeInfo?: { storeAddress?: string };
+  gstDetails?: { gstin?: string };
+  createdAt: string;
+}
+
+function mapVendor(v: ApiVendor): Vendor {
+  const addressLines = [v.businessInfo?.addressLine1, v.businessInfo?.addressLine2].filter(Boolean).join(', ');
+  return {
+    id: v.id,
+    storeName: vendorDisplayName(v),
+    ownerName: v.fullName ?? '—',
+    email: v.email ?? '—',
+    phone: v.phone,
+    avatarColor: avatarColorFor(v.id),
+    category: v.businessInfo?.category ?? '—',
+    city: vendorCity(v),
+    address: addressLines || v.storeInfo?.storeAddress || '—',
+    status: v.status,
+    kycStatus: v.kycStatus,
+    // No rating/commission/order-volume data server-side yet — see report for
+    // why these default to 0 on the list page (an N+1 query would be needed to
+    // compute them honestly per row; VendorDetail.tsx does this for a single vendor).
+    rating: 0,
+    totalOrders: 0,
+    revenue: 0,
+    commissionRate: 0,
+    productsCount: 0,
+    joinedAt: v.createdAt,
+    gstNumber: v.gstDetails?.gstin ?? '—',
+  };
+}
+
 export function Vendors() {
-  const [vendorList, setVendorList] = useState<Vendor[]>(seedVendors);
+  const [apiVendors, setApiVendors] = useState<ApiVendor[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
   const [statusTab, setStatusTab] = useState<VendorStatus | 'all'>('all');
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('all');
   const [page, setPage] = useState(1);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const data = await api.get<ApiVendor[]>('/admin/vendors');
+        if (!cancelled) setApiVendors(data);
+      } catch (err) {
+        if (!cancelled) setLoadError(errorMessage(err, 'Failed to load vendors'));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
+
+  const vendorList = useMemo(() => apiVendors.map(mapVendor), [apiVendors]);
+
   const categories = useMemo(
-    () => Array.from(new Set(seedVendors.map((v) => v.category))).sort(),
-    [],
+    () => Array.from(new Set(vendorList.map((v) => v.category).filter((c) => c !== '—'))).sort(),
+    [vendorList],
   );
 
   const tabItems: TabItem[] = STATUS_TABS.map((t) => ({
@@ -63,8 +141,14 @@ export function Vendors() {
   const pendingCount = vendorList.filter((v) => v.status === 'pending').length;
   const suspendedRejectedCount = vendorList.filter((v) => v.status === 'suspended' || v.status === 'rejected').length;
 
-  function updateStatus(id: string, status: VendorStatus) {
-    setVendorList((list) => list.map((v) => (v.id === id ? { ...v, status } : v)));
+  async function updateStatus(id: string, status: VendorStatus) {
+    setActionError(null);
+    try {
+      const updated = await api.patch<ApiVendor>(`/admin/vendors/${id}/status`, { status });
+      setApiVendors((prev) => prev.map((v) => (v.id === id ? updated : v)));
+    } catch (err) {
+      setActionError(errorMessage(err, 'Failed to update vendor status'));
+    }
   }
 
   function handleTabChange(value: string) {
@@ -78,6 +162,8 @@ export function Vendors() {
         title="Vendors"
         subtitle="Manage the vendor roster — review sign-ups, monitor stores, and handle suspensions"
       />
+
+      {actionError && <InlineAlert message={actionError} className="mb-4" />}
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatCard
@@ -144,7 +230,16 @@ export function Vendors() {
           </div>
         </div>
 
-        {pageItems.length === 0 ? (
+        {loading ? (
+          <EmptyState icon={<Loader2 size={24} className="animate-spin" />} title="Loading vendors…" />
+        ) : loadError ? (
+          <EmptyState
+            icon={<AlertTriangle size={24} />}
+            title="Couldn't load vendors"
+            description={loadError}
+            action={<Button onClick={() => setReloadKey((k) => k + 1)}>Retry</Button>}
+          />
+        ) : pageItems.length === 0 ? (
           <EmptyState
             icon={<Store size={24} />}
             title="No vendors found"
@@ -230,7 +325,7 @@ export function Vendors() {
           </Table>
         )}
 
-        {pageItems.length > 0 && (
+        {!loading && !loadError && pageItems.length > 0 && (
           <Pagination
             page={currentPage}
             pageCount={pageCount}

@@ -24,7 +24,7 @@ export function HandoverChecklistScreen({ navigation, route }: Props) {
   const order = getOrder(orderId);
   const [checked, setChecked] = useState<boolean[]>([true, true, true, false, false]);
 
-  if (!order || !order.deliveryPartner) return null;
+  if (!order) return null;
 
   const checkedCount = checked.filter(Boolean).length;
 
@@ -49,10 +49,8 @@ export function HandoverChecklistScreen({ navigation, route }: Props) {
           <Icon name="bike" size={16} color={colors.white} />
         </View>
         <View style={styles.partnerTextColumn}>
-          <Text style={styles.partnerName}>{order.deliveryPartner.name} arrived</Text>
-          <Text style={styles.partnerMeta}>
-            {order.deliveryPartner.vehicle} · {order.deliveryPartner.plate}
-          </Text>
+          <Text style={styles.partnerName}>Delivery partner</Text>
+          <Text style={styles.partnerMeta}>Will be assigned shortly</Text>
         </View>
         <Pressable style={styles.callButton} onPress={() => Alert.alert('Call Partner', 'Coming soon.')}>
           <Icon name="phone" size={15} color={colors.primary} />

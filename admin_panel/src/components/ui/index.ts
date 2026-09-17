@@ -6,6 +6,7 @@ export * from './StatCard';
 export * from './Input';
 export * from './Table';
 export * from './EmptyState';
+export * from './InlineAlert';
 export * from './Pagination';
 export * from './Drawer';
 export * from './Tabs';

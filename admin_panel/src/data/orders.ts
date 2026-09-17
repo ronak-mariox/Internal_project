@@ -8,19 +8,18 @@ import { createRng, pick, pickWeighted, intBetween, hoursAgo, minutesAgo } from 
 const rng = createRng(2026);
 
 const STATUS_FLOW: OrderStatus[] = [
-  'new', 'preparing', 'quality-check', 'packing', 'ready-for-dispatch', 'dispatched', 'completed',
+  'placed', 'accepted', 'preparing', 'ready_for_pickup', 'out_for_delivery', 'delivered',
 ];
 
 const statusPool: [OrderStatus, number][] = [
-  ['new', 8],
+  ['placed', 8],
+  ['accepted', 10],
   ['preparing', 10],
-  ['quality-check', 6],
-  ['packing', 8],
-  ['ready-for-dispatch', 7],
-  ['dispatched', 12],
-  ['completed', 40],
-  ['cancelled', 6],
-  ['failed', 3],
+  ['ready_for_pickup', 9],
+  ['out_for_delivery', 12],
+  ['delivered', 40],
+  ['cancelled', 7],
+  ['rejected', 4],
 ];
 
 const cancelReasons = ['Customer requested cancellation', 'Item out of stock', 'Vendor unable to fulfil', 'Duplicate order', 'Address unserviceable'];
@@ -28,8 +27,8 @@ const paymentMethods: Order['paymentMethod'][] = ['UPI', 'Card', 'Cash on Delive
 
 function buildHistory(finalStatus: OrderStatus, placedMinsAgo: number): OrderStatusEvent[] {
   const history: OrderStatusEvent[] = [];
-  if (finalStatus === 'cancelled' || finalStatus === 'failed') {
-    history.push({ status: 'new', time: minutesAgo(placedMinsAgo) });
+  if (finalStatus === 'cancelled' || finalStatus === 'rejected') {
+    history.push({ status: 'placed', time: minutesAgo(placedMinsAgo) });
     history.push({ status: finalStatus, time: minutesAgo(Math.max(placedMinsAgo - intBetween(rng, 2, 20), 0)) });
     return history;
   }
@@ -57,7 +56,7 @@ export const orders: Order[] = Array.from({ length: 320 }, (_, i) => {
   const platformFee = 5;
   const discount = pickWeighted(rng, [[0, 60], [20, 20], [40, 15], [60, 5]] as const);
   const total = Math.max(subtotal + deliveryFee + platformFee - discount, 0);
-  const needsDriver = !['new', 'cancelled', 'failed'].includes(status);
+  const needsDriver = !['placed', 'cancelled', 'rejected'].includes(status);
   const driver = needsDriver ? pick(rng, drivers) : undefined;
   const placedMinsAgo = intBetween(rng, 8, 60 * 24 * 29);
 
@@ -78,7 +77,7 @@ export const orders: Order[] = Array.from({ length: 320 }, (_, i) => {
     discount,
     total,
     paymentMethod: pick(rng, paymentMethods),
-    paymentStatus: (status === 'failed' ? 'failed' : status === 'cancelled' ? (rng() > 0.4 ? 'refunded' : 'pending') : 'paid') as Order['paymentStatus'],
+    paymentStatus: (status === 'rejected' ? 'failed' : status === 'cancelled' ? (rng() > 0.4 ? 'refunded' : 'pending') : 'paid') as Order['paymentStatus'],
     status,
     address: `${intBetween(rng, 1, 999)}, ${pick(rng, ['Sector 62', 'Sector 18', 'DLF Phase 3', 'HSR Layout', 'Koregaon Park', 'Banjara Hills'])}`,
     city: vendor.city,

@@ -7,6 +7,7 @@ export interface ProductVariant {
   price: number;
   stock: number;
   sku?: string;
+  isPrimary?: boolean;
 }
 
 export type ProductStatus = 'draft' | 'pending' | 'active' | 'inactive' | 'rejected';
@@ -27,6 +28,12 @@ export interface ProductDoc {
   status: ProductStatus;
   rejectionReason?: string;
   isAvailable: boolean;
+  sku?: string;
+  barcode?: string;
+  hsnCode?: string;
+  countryOfOrigin?: string;
+  reorderLevel?: number;
+  maxStock?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -39,6 +46,7 @@ const variantSchema = new Schema<ProductVariant>(
     price: { type: Number, required: true, min: 0 },
     stock: { type: Number, required: true, min: 0, default: 0 },
     sku: String,
+    isPrimary: Boolean,
   },
   { _id: false },
 );
@@ -66,6 +74,12 @@ const productSchema = new Schema<ProductDoc>(
     status: { type: String, enum: ['draft', 'pending', 'active', 'inactive', 'rejected'], default: 'pending' },
     rejectionReason: String,
     isAvailable: { type: Boolean, default: true },
+    sku: String,
+    barcode: String,
+    hsnCode: String,
+    countryOfOrigin: String,
+    reorderLevel: Number,
+    maxStock: Number,
   },
   { timestamps: true },
 );

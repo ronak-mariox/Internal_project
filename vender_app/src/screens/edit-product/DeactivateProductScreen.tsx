@@ -1,11 +1,12 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { Button, NavHeader } from '../../components';
 import { Icon } from '../../icons/Icon';
 import { useProductCatalog } from '../../context/ProductCatalogContext';
+import { getApiErrorMessage } from '../../services/api';
 import { colors, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'DeactivateProduct'>;
@@ -14,6 +15,7 @@ export function DeactivateProductScreen({ navigation, route }: Props) {
   const { productId } = route.params;
   const { products, setProductStatus } = useProductCatalog();
   const product = products.find(item => item.id === productId);
+  const [saving, setSaving] = useState(false);
 
   if (!product) {
     return (
@@ -30,9 +32,17 @@ export function DeactivateProductScreen({ navigation, route }: Props) {
     `${product.stock} units remain in your inventory`,
   ];
 
-  function handleConfirm() {
-    setProductStatus(productId, 'inactive');
-    navigation.goBack();
+  async function handleConfirm() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await setProductStatus(productId, 'inactive');
+      navigation.goBack();
+    } catch (err) {
+      Alert.alert('Could not deactivate product', getApiErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -81,8 +91,8 @@ export function DeactivateProductScreen({ navigation, route }: Props) {
         </View>
 
         <View style={styles.footer}>
-          <Button label="Yes, Deactivate Product" onPress={handleConfirm} />
-          <Button label="Cancel" variant="outline" onPress={() => navigation.goBack()} />
+          <Button label="Yes, Deactivate Product" onPress={handleConfirm} loading={saving} disabled={saving} />
+          <Button label="Cancel" variant="outline" onPress={() => navigation.goBack()} disabled={saving} />
         </View>
       </View>
     </SafeAreaView>

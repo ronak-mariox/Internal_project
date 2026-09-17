@@ -43,7 +43,11 @@ async function reserveStock(lines: { product: ProductDoc; variantId: string; qua
 
 export async function createOrder(req: Request, res: Response) {
   const customerId = req.user!.id;
-  const { addressId, paymentMethod } = req.body as { addressId: string; paymentMethod: 'cod' | 'online' };
+  const { addressId, paymentMethod, specialInstructions } = req.body as {
+    addressId: string;
+    paymentMethod: 'cod' | 'online';
+    specialInstructions?: string;
+  };
 
   if (paymentMethod !== 'cod') {
     throw new HttpError(422, 'Online payment is not available yet — please choose Cash on Delivery');
@@ -101,6 +105,7 @@ export async function createOrder(req: Request, res: Response) {
     variantLabel: l.variant.label,
     imageUrl: l.product.images[0],
     price: l.variant.price,
+    mrp: l.variant.mrp,
     quantity: l.quantity,
     subtotal: l.subtotal,
   }));
@@ -130,6 +135,7 @@ export async function createOrder(req: Request, res: Response) {
       paymentStatus: 'pending',
       status: 'placed',
       statusHistory: [{ status: 'placed', at: now }],
+      specialInstructions,
       placedAt: now,
     });
   } catch (err) {

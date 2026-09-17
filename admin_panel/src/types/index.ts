@@ -37,7 +37,8 @@ export type ProductStatus =
   | 'low-stock'
   | 'out-of-stock'
   | 'rejected'
-  | 'draft';
+  | 'draft'
+  | 'inactive';
 
 export interface Product {
   id: ID;
@@ -95,7 +96,12 @@ export interface Vendor {
 // Delivery partners (drivers)
 // ---------------------------------------------------------------------------
 
-export type DriverStatus = 'online' | 'offline' | 'on-delivery' | 'suspended';
+// The backend has no real-time presence/session tracking (no 'online'/'offline'/
+// 'on-delivery' concept) — a driver's only real server-side state is this account
+// status pipeline, mirroring Vendor's. Widened additively from the old mock-only
+// 'online' | 'offline' | 'on-delivery' | 'suspended' union to match backend reality
+// instead of pretending to have live presence data.
+export type DriverStatus = 'pending' | 'active' | 'suspended' | 'rejected';
 
 export interface Driver {
   id: ID;
@@ -132,7 +138,8 @@ export interface Customer {
   totalOrders: number;
   totalSpent: number;
   joinedAt: string;
-  lastOrderAt: string;
+  /** Absent when the customer has no orders on record — never fabricated. */
+  lastOrderAt?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -140,15 +147,14 @@ export interface Customer {
 // ---------------------------------------------------------------------------
 
 export type OrderStatus =
-  | 'new'
+  | 'placed'
+  | 'accepted'
   | 'preparing'
-  | 'quality-check'
-  | 'packing'
-  | 'ready-for-dispatch'
-  | 'dispatched'
-  | 'completed'
+  | 'ready_for_pickup'
+  | 'out_for_delivery'
+  | 'delivered'
   | 'cancelled'
-  | 'failed';
+  | 'rejected';
 
 export interface OrderItem {
   productId: ID;
@@ -165,6 +171,8 @@ export interface OrderStatusEvent {
 
 export interface Order {
   id: ID;
+  /** Human-readable order code (e.g. "ORD-10450") — the backend's `id` is a raw Mongo id used for routing/API calls. */
+  orderNumber?: string;
   customerId: ID;
   customerName: string;
   customerPhone: string;
@@ -193,15 +201,14 @@ export const ORDER_STATUS_META: Record<
   OrderStatus,
   { label: string; color: string; surface: string }
 > = {
-  new: { label: 'New', color: 'var(--color-info)', surface: 'var(--color-info-surface)' },
+  placed: { label: 'Placed', color: 'var(--color-info)', surface: 'var(--color-info-surface)' },
+  accepted: { label: 'Accepted', color: 'var(--color-violet)', surface: 'var(--color-violet-surface)' },
   preparing: { label: 'Preparing', color: 'var(--color-orange)', surface: 'var(--color-orange-surface)' },
-  'quality-check': { label: 'Quality Check', color: 'var(--color-violet)', surface: 'var(--color-violet-surface)' },
-  packing: { label: 'Packing', color: 'var(--color-orange)', surface: 'var(--color-orange-surface)' },
-  'ready-for-dispatch': { label: 'Ready for Dispatch', color: 'var(--color-teal)', surface: 'var(--color-teal-surface)' },
-  dispatched: { label: 'Dispatched', color: 'var(--color-indigo)', surface: 'var(--color-indigo-surface)' },
-  completed: { label: 'Completed', color: 'var(--color-success)', surface: 'var(--color-success-surface)' },
+  ready_for_pickup: { label: 'Ready for Pickup', color: 'var(--color-teal)', surface: 'var(--color-teal-surface)' },
+  out_for_delivery: { label: 'Out for Delivery', color: 'var(--color-indigo)', surface: 'var(--color-indigo-surface)' },
+  delivered: { label: 'Delivered', color: 'var(--color-success)', surface: 'var(--color-success-surface)' },
   cancelled: { label: 'Cancelled', color: 'var(--color-ink-500)', surface: 'var(--color-ink-100)' },
-  failed: { label: 'Failed', color: 'var(--color-danger)', surface: 'var(--color-danger-surface)' },
+  rejected: { label: 'Rejected', color: 'var(--color-danger)', surface: 'var(--color-danger-surface)' },
 };
 
 // ---------------------------------------------------------------------------
@@ -242,7 +249,10 @@ export interface DriverPayout {
 // Offers / promotions
 // ---------------------------------------------------------------------------
 
-export type OfferStatus = 'active' | 'scheduled' | 'expired' | 'paused';
+// The backend coupon model has no "scheduled" concept (no startsAt field — a
+// coupon is usable from the moment it's created), so that status is dropped here
+// rather than kept as dead, unreachable UI state.
+export type OfferStatus = 'active' | 'expired' | 'paused';
 
 export interface Offer {
   id: ID;
@@ -256,7 +266,8 @@ export interface Offer {
   usageCount: number;
   status: OfferStatus;
   startDate: string;
-  endDate: string;
+  /** Absent when the coupon has no expiry (backend's `expiresAt` is optional) — never fabricated. */
+  endDate?: string;
 }
 
 // ---------------------------------------------------------------------------

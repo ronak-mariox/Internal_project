@@ -1,11 +1,12 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { Button, NavHeader } from '../../components';
 import { Icon } from '../../icons/Icon';
 import { useProductCatalog } from '../../context/ProductCatalogContext';
+import { getApiErrorMessage } from '../../services/api';
 import { colors, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'DeleteProduct'>;
@@ -22,6 +23,7 @@ export function DeleteProductScreen({ navigation, route }: Props) {
   const { productId } = route.params;
   const { products, removeProduct } = useProductCatalog();
   const product = products.find(item => item.id === productId);
+  const [deleting, setDeleting] = useState(false);
 
   if (!product) {
     return (
@@ -31,10 +33,18 @@ export function DeleteProductScreen({ navigation, route }: Props) {
     );
   }
 
-  function handleDelete() {
+  async function handleDelete() {
+    if (deleting) return;
     const { name, sku } = product!;
-    removeProduct(productId);
-    navigation.replace('DeleteConfirmation', { productName: name, sku });
+    setDeleting(true);
+    try {
+      await removeProduct(productId);
+      navigation.replace('DeleteConfirmation', { productName: name, sku });
+    } catch (err) {
+      Alert.alert('Could not delete product', getApiErrorMessage(err));
+    } finally {
+      setDeleting(false);
+    }
   }
 
   return (
@@ -74,8 +84,13 @@ export function DeleteProductScreen({ navigation, route }: Props) {
         </View>
 
         <View style={styles.footer}>
-          <Button label="Keep Product" variant="outline" onPress={() => navigation.goBack()} />
-          <Button label="I understand, Delete Product" onPress={handleDelete} />
+          <Button label="Keep Product" variant="outline" onPress={() => navigation.goBack()} disabled={deleting} />
+          <Button
+            label="I understand, Delete Product"
+            onPress={handleDelete}
+            loading={deleting}
+            disabled={deleting}
+          />
         </View>
       </View>
     </SafeAreaView>

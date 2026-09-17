@@ -1,8 +1,9 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { useOrders } from '../../context/OrdersContext';
+import { getApiErrorMessage } from '../../services/api';
 import { colors, radii, spacing, typography } from '../../theme';
 import { FlowStatusScreen } from './FlowStatusScreen';
 import { FlexButton } from './FlexButton';
@@ -13,11 +14,20 @@ export function HandoverConfirmationScreen({ navigation, route }: Props) {
   const { orderId } = route.params;
   const { getOrder, handoverToPartner } = useOrders();
   const order = getOrder(orderId);
-  if (!order || !order.deliveryPartner) return null;
+  const [confirming, setConfirming] = useState(false);
+  if (!order) return null;
 
-  function handleConfirm() {
-    handoverToPartner(orderId);
-    navigation.replace('OrderDispatched', { orderId });
+  async function handleConfirm() {
+    if (confirming) return;
+    setConfirming(true);
+    try {
+      await handoverToPartner(orderId);
+      navigation.replace('OrderDispatched', { orderId });
+    } catch (err) {
+      Alert.alert('Could not update order', getApiErrorMessage(err));
+    } finally {
+      setConfirming(false);
+    }
   }
 
   return (
@@ -29,8 +39,8 @@ export function HandoverConfirmationScreen({ navigation, route }: Props) {
       heading="Confirm Handover?"
       subtitle={
         <Text style={styles.subtitle}>
-          You are handing <Text style={styles.subtitleBold}>{order.id}</Text> to{' '}
-          <Text style={styles.subtitleBold}>{order.deliveryPartner.name}</Text>. This cannot be undone.
+          You are handing <Text style={styles.subtitleBold}>{order.id}</Text> to the delivery partner. This cannot
+          be undone.
         </Text>
       }
       footer={
@@ -42,13 +52,15 @@ export function HandoverConfirmationScreen({ navigation, route }: Props) {
             textColor={colors.textSecondary}
             borderColor={colors.border}
             flex={1}
+            disabled={confirming}
           />
           <FlexButton
-            label="Confirm Handover"
+            label={confirming ? 'Confirming…' : 'Confirm Handover'}
             onPress={handleConfirm}
             background={colors.primary}
             textColor={colors.white}
             flex={1.9}
+            disabled={confirming}
           />
         </View>
       }
@@ -56,11 +68,11 @@ export function HandoverConfirmationScreen({ navigation, route }: Props) {
       <View style={styles.detailCard}>
         <View style={styles.row}>
           <Text style={styles.label}>Partner</Text>
-          <Text style={styles.value}>{order.deliveryPartner.name}</Text>
+          <Text style={styles.value}>Pending assignment</Text>
         </View>
         <View style={styles.row}>
           <Text style={styles.label}>Vehicle</Text>
-          <Text style={styles.value}>{order.deliveryPartner.plate}</Text>
+          <Text style={styles.value}>—</Text>
         </View>
         <View style={styles.row}>
           <Text style={styles.label}>Items</Text>

@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { useProductCatalog } from '../../context/ProductCatalogContext';
+import { getApiErrorMessage } from '../../services/api';
 import { colors, radii, spacing, typography } from '../../theme';
 import { FlowStatusScreen } from '../order-flow/FlowStatusScreen';
 import { FlexButton } from '../order-flow/FlexButton';
@@ -13,14 +14,23 @@ export function PriceUpdateErrorScreen({ navigation, route }: Props) {
   const { productId, pendingMrp, pendingSellingPrice, headline, message, errorCode, errorField } = route.params;
   const { products, updateProduct } = useProductCatalog();
   const product = products.find(item => item.id === productId);
+  const [retrying, setRetrying] = useState(false);
   if (!product) return null;
 
-  function handleRetry() {
+  async function handleRetry() {
+    if (retrying) return;
     const patch: { mrp?: number; sellingPrice?: number; updatedAt: number } = { updatedAt: Date.now() };
     if (pendingMrp !== undefined) patch.mrp = pendingMrp;
     if (pendingSellingPrice !== undefined) patch.sellingPrice = pendingSellingPrice;
-    updateProduct(productId, patch);
-    navigation.replace('PriceUpdated', { productId, headline, message });
+    setRetrying(true);
+    try {
+      await updateProduct(productId, patch);
+      navigation.replace('PriceUpdated', { productId, headline, message });
+    } catch (err) {
+      Alert.alert('Could not save', getApiErrorMessage(err));
+    } finally {
+      setRetrying(false);
+    }
   }
 
   return (
@@ -35,11 +45,12 @@ export function PriceUpdateErrorScreen({ navigation, route }: Props) {
         <View style={styles.footerColumn}>
           <View style={styles.fullWidthRow}>
             <FlexButton
-              label="Retry"
+              label={retrying ? 'Retrying…' : 'Retry'}
               onPress={handleRetry}
               background={colors.primary}
               textColor={colors.white}
               flex={1}
+              disabled={retrying}
             />
           </View>
           <View style={styles.fullWidthRow}>

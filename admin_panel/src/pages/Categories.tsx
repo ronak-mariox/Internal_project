@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Pencil,
   Plus,
@@ -10,6 +10,8 @@ import {
   EyeOff,
   Layers,
   Package,
+  Loader2,
+  AlertTriangle,
 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/Button';
@@ -18,8 +20,9 @@ import { StatusBadge } from '@/components/ui/Badge';
 import { Drawer } from '@/components/ui/Drawer';
 import { Field, Input, Select } from '@/components/ui/Input';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { categories as seedCategories } from '@/data/categories';
+import { InlineAlert } from '@/components/ui/InlineAlert';
 import type { Category, CatalogStatus, Subcategory } from '@/types';
+import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/cn';
 
 const slugify = (value: string) =>
@@ -28,6 +31,88 @@ const slugify = (value: string) =>
     .trim()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '') || 'item';
+
+// Decorative-only gradient pair, hashed from the category id so it's stable across
+// reloads without the backend needing to store it (Category has no colorFrom/colorTo
+// field server-side — see admin panel README notes on Category type).
+const GRADIENT_PALETTE: [string, string][] = [
+  ['#4ADE80', '#16A34A'],
+  ['#93C5FD', '#2563EB'],
+  ['#BBF7D0', '#15803D'],
+  ['#FDE68A', '#D97706'],
+  ['#FBCFE8', '#BE185D'],
+  ['#A5F3FC', '#0E7490'],
+  ['#DDD6FE', '#6D28D9'],
+  ['#FCA5A5', '#B91C1C'],
+];
+
+function hashString(value: string): number {
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) {
+    hash = (hash << 5) - hash + value.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function gradientFor(id: string): [string, string] {
+  return GRADIENT_PALETTE[hashString(id) % GRADIENT_PALETTE.length];
+}
+
+const placeholderImage = (seed: string) => `https://picsum.photos/seed/${slugify(seed)}/200/200`;
+
+// ---------------------------------------------------------------------------
+// Backend shapes (GET /admin/categories) — mapped into the admin panel's local
+// Category/Subcategory types below.
+// ---------------------------------------------------------------------------
+
+interface ApiSubcategory {
+  id: string;
+  name: string;
+  imageUrl?: string;
+  isActive: boolean;
+}
+
+interface ApiCategory {
+  id: string;
+  name: string;
+  slug: string;
+  imageUrl?: string;
+  sortOrder: number;
+  isActive: boolean;
+  showOnHome: boolean;
+  subcategories: ApiSubcategory[];
+}
+
+function mapCategory(c: ApiCategory): Category {
+  const [colorFrom, colorTo] = gradientFor(c.id);
+  return {
+    id: c.id,
+    name: c.name,
+    image: c.imageUrl || placeholderImage(c.name),
+    colorFrom,
+    colorTo,
+    order: c.sortOrder,
+    status: c.isActive ? 'active' : 'inactive',
+    showOnHome: c.showOnHome,
+    subcategories: c.subcategories.map((s) => mapSubcategory(s, c.id)),
+  };
+}
+
+function mapSubcategory(s: ApiSubcategory, categoryId: string): Subcategory {
+  return {
+    id: s.id,
+    categoryId,
+    name: s.name,
+    image: s.imageUrl || placeholderImage(s.name),
+    productCount: 0, // no backend field yet — not worth a full product fetch from this page
+    status: s.isActive ? 'active' : 'inactive',
+  };
+}
+
+function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof ApiError ? err.message : fallback;
+}
 
 interface DraftSubcategory {
   id: string;
@@ -80,11 +165,40 @@ const toDraft = (category: Category): DraftCategory => ({
 });
 
 export function Categories() {
-  const [categoriesState, setCategoriesState] = useState<Category[]>(seedCategories);
+  const [categoriesState, setCategoriesState] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [draft, setDraft] = useState<DraftCategory>(emptyDraft(1));
   const [newSubName, setNewSubName] = useState('');
+  const [removedSubIds, setRemovedSubIds] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [drawerError, setDrawerError] = useState<string | null>(null);
+
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const data = await api.get<ApiCategory[]>('/admin/categories');
+        if (!cancelled) setCategoriesState(data.map(mapCategory));
+      } catch (err) {
+        if (!cancelled) setLoadError(errorMessage(err, 'Failed to load categories'));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
 
   const sortedCategories = useMemo(
     () => [...categoriesState].sort((a, b) => a.order - b.order),
@@ -97,12 +211,16 @@ export function Categories() {
       : 1;
     setDraft(emptyDraft(nextOrder));
     setNewSubName('');
+    setRemovedSubIds([]);
+    setDrawerError(null);
     setDrawerOpen(true);
   };
 
   const openEditDrawer = (category: Category) => {
     setDraft(toDraft(category));
     setNewSubName('');
+    setRemovedSubIds([]);
+    setDrawerError(null);
     setDrawerOpen(true);
   };
 
@@ -111,40 +229,61 @@ export function Categories() {
   const toggleExpanded = (id: string) =>
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
 
-  const toggleCategoryStatus = (id: string) => {
-    setCategoriesState((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, status: c.status === 'active' ? 'inactive' : 'active' } : c)),
-    );
-  };
+  async function toggleCategoryStatus(id: string) {
+    const current = categoriesState.find((c) => c.id === id);
+    if (!current) return;
+    setActionError(null);
+    try {
+      const updated = await api.patch<ApiCategory>(`/admin/categories/${id}`, {
+        isActive: current.status !== 'active',
+      });
+      setCategoriesState((prev) => prev.map((c) => (c.id === id ? mapCategory(updated) : c)));
+    } catch (err) {
+      setActionError(errorMessage(err, 'Failed to update category status'));
+    }
+  }
 
-  const toggleShowOnHome = (id: string) => {
-    setCategoriesState((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, showOnHome: !c.showOnHome } : c)),
-    );
-  };
+  async function toggleShowOnHome(id: string) {
+    const current = categoriesState.find((c) => c.id === id);
+    if (!current) return;
+    setActionError(null);
+    try {
+      const updated = await api.patch<ApiCategory>(`/admin/categories/${id}`, {
+        showOnHome: !current.showOnHome,
+      });
+      setCategoriesState((prev) => prev.map((c) => (c.id === id ? mapCategory(updated) : c)));
+    } catch (err) {
+      setActionError(errorMessage(err, 'Failed to update category'));
+    }
+  }
 
-  const toggleSubcategoryStatus = (categoryId: string, subId: string) => {
-    setCategoriesState((prev) =>
-      prev.map((c) =>
-        c.id !== categoryId
-          ? c
-          : {
-              ...c,
-              subcategories: c.subcategories.map((s) =>
-                s.id === subId ? { ...s, status: s.status === 'active' ? 'inactive' : 'active' } : s,
-              ),
-            },
-      ),
-    );
-  };
+  async function toggleSubcategoryStatus(categoryId: string, subId: string) {
+    const category = categoriesState.find((c) => c.id === categoryId);
+    const sub = category?.subcategories.find((s) => s.id === subId);
+    if (!sub) return;
+    setActionError(null);
+    try {
+      const updated = await api.patch<ApiCategory>(
+        `/admin/categories/${categoryId}/subcategories/${subId}`,
+        { isActive: sub.status !== 'active' },
+      );
+      setCategoriesState((prev) => prev.map((c) => (c.id === categoryId ? mapCategory(updated) : c)));
+    } catch (err) {
+      setActionError(errorMessage(err, 'Failed to update subcategory'));
+    }
+  }
 
-  const removeSubcategory = (categoryId: string, subId: string) => {
-    setCategoriesState((prev) =>
-      prev.map((c) =>
-        c.id !== categoryId ? c : { ...c, subcategories: c.subcategories.filter((s) => s.id !== subId) },
-      ),
-    );
-  };
+  async function removeSubcategory(categoryId: string, subId: string) {
+    setActionError(null);
+    try {
+      const updated = await api.delete<ApiCategory>(
+        `/admin/categories/${categoryId}/subcategories/${subId}`,
+      );
+      setCategoriesState((prev) => prev.map((c) => (c.id === categoryId ? mapCategory(updated) : c)));
+    } catch (err) {
+      setActionError(errorMessage(err, 'Failed to remove subcategory'));
+    }
+  }
 
   const addDraftSubcategory = () => {
     const name = newSubName.trim();
@@ -160,6 +299,10 @@ export function Categories() {
   };
 
   const removeDraftSubcategory = (id: string) => {
+    const sub = draft.subcategories.find((s) => s.id === id);
+    if (sub && !sub.isNew) {
+      setRemovedSubIds((prev) => [...prev, id]);
+    }
     setDraft((prev) => ({ ...prev, subcategories: prev.subcategories.filter((s) => s.id !== id) }));
   };
 
@@ -179,55 +322,68 @@ export function Categories() {
     }));
   };
 
-  const saveDraft = () => {
+  async function saveDraft() {
     if (!draft.name.trim()) return;
-
-    const subcategories: Subcategory[] = draft.subcategories.map((s) => ({
-      id: s.id,
-      categoryId: draft.id ?? '',
-      name: s.name,
-      image: `https://picsum.photos/seed/${slugify(s.name)}/200/200`,
-      productCount: s.productCount,
-      status: s.status,
-    }));
-
-    if (draft.id) {
-      const categoryId = draft.id;
-      setCategoriesState((prev) =>
-        prev.map((c) =>
-          c.id === categoryId
-            ? {
-                ...c,
-                name: draft.name.trim(),
-                image: draft.image.trim() || c.image,
-                colorFrom: draft.colorFrom,
-                colorTo: draft.colorTo,
-                order: draft.order,
-                status: draft.status,
-                showOnHome: draft.showOnHome,
-                subcategories: subcategories.map((s) => ({ ...s, categoryId })),
-              }
-            : c,
-        ),
-      );
-    } else {
-      const id = `cat-${slugify(draft.name)}-${Date.now()}`;
-      const newCategory: Category = {
-        id,
+    setSaving(true);
+    setDrawerError(null);
+    try {
+      const payload = {
         name: draft.name.trim(),
-        image: draft.image.trim() || `https://picsum.photos/seed/${slugify(draft.name)}/200/200`,
-        colorFrom: draft.colorFrom,
-        colorTo: draft.colorTo,
-        order: draft.order,
-        status: draft.status,
+        imageUrl: draft.image.trim() || undefined,
+        sortOrder: draft.order,
+        isActive: draft.status === 'active',
         showOnHome: draft.showOnHome,
-        subcategories: subcategories.map((s) => ({ ...s, categoryId: id })),
       };
-      setCategoriesState((prev) => [newCategory, ...prev]);
-    }
 
-    setDrawerOpen(false);
-  };
+      let categoryId = draft.id;
+      let updated: ApiCategory;
+      if (categoryId) {
+        updated = await api.patch<ApiCategory>(`/admin/categories/${categoryId}`, payload);
+      } else {
+        updated = await api.post<ApiCategory>('/admin/categories', payload);
+        categoryId = updated.id;
+      }
+
+      for (const subId of removedSubIds) {
+        updated = await api.delete<ApiCategory>(`/admin/categories/${categoryId}/subcategories/${subId}`);
+      }
+
+      for (const sub of draft.subcategories) {
+        const trimmedName = sub.name.trim();
+        if (!trimmedName) continue;
+        if (sub.isNew) {
+          updated = await api.post<ApiCategory>(`/admin/categories/${categoryId}/subcategories`, {
+            name: trimmedName,
+          });
+          if (sub.status === 'inactive') {
+            const created = updated.subcategories[updated.subcategories.length - 1];
+            if (created) {
+              updated = await api.patch<ApiCategory>(
+                `/admin/categories/${categoryId}/subcategories/${created.id}`,
+                { isActive: false },
+              );
+            }
+          }
+        } else {
+          updated = await api.patch<ApiCategory>(`/admin/categories/${categoryId}/subcategories/${sub.id}`, {
+            name: trimmedName,
+            isActive: sub.status === 'active',
+          });
+        }
+      }
+
+      const mapped = mapCategory(updated);
+      setCategoriesState((prev) => {
+        const exists = prev.some((c) => c.id === mapped.id);
+        return exists ? prev.map((c) => (c.id === mapped.id ? mapped : c)) : [mapped, ...prev];
+      });
+      setDrawerOpen(false);
+    } catch (err) {
+      setDrawerError(errorMessage(err, 'Failed to save category'));
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div>
@@ -241,7 +397,22 @@ export function Categories() {
         }
       />
 
-      {sortedCategories.length === 0 ? (
+      {actionError && <InlineAlert message={actionError} className="mb-4" />}
+
+      {loading ? (
+        <Card>
+          <EmptyState icon={<Loader2 size={22} className="animate-spin" />} title="Loading categories…" />
+        </Card>
+      ) : loadError ? (
+        <Card>
+          <EmptyState
+            icon={<AlertTriangle size={22} />}
+            title="Couldn't load categories"
+            description={loadError}
+            action={<Button onClick={() => setReloadKey((k) => k + 1)}>Retry</Button>}
+          />
+        </Card>
+      ) : sortedCategories.length === 0 ? (
         <Card>
           <EmptyState
             icon={<Layers size={22} />}
@@ -377,16 +548,18 @@ export function Categories() {
         subtitle={draft.id ? 'Update details shown on the Verdant app' : 'Create a new home screen category'}
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={closeDrawer}>
+            <Button variant="outline" onClick={closeDrawer} disabled={saving}>
               Cancel
             </Button>
-            <Button onClick={saveDraft} disabled={!draft.name.trim()}>
+            <Button onClick={saveDraft} disabled={!draft.name.trim() || saving} loading={saving}>
               {draft.id ? 'Save Changes' : 'Create Category'}
             </Button>
           </div>
         }
       >
         <div className="space-y-4">
+          {drawerError && <InlineAlert message={drawerError} />}
+
           <Field label="Name">
             <Input
               value={draft.name}

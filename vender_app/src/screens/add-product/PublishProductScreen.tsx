@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -6,6 +6,7 @@ import type { AuthStackParamList } from '../../navigation/types';
 import { Badge, Button, NavHeader } from '../../components';
 import { Icon } from '../../icons/Icon';
 import { useProductDraft } from '../../context/ProductDraftContext';
+import { getApiErrorMessage } from '../../services/api';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'PublishProduct'>;
@@ -18,18 +19,28 @@ const AFTER_PUBLISHING = [
 ];
 
 export function PublishProductScreen({ navigation }: Props) {
-  const { draft, publishDraft, resetDraft } = useProductDraft();
+  const { draft, publishDraft } = useProductDraft();
   const basicInfo = draft.basicInfo;
   const packSize = draft.packSize ? `${draft.packSize.netWeight}${draft.packSize.unit.split(' ')[0]}` : '—';
+  const [publishing, setPublishing] = useState(false);
 
-  function handlePublishNow() {
-    publishDraft('pending');
-    navigation.replace('PublishSuccess');
+  async function handlePublishNow() {
+    if (publishing) return;
+    setPublishing(true);
+    try {
+      await publishDraft();
+      navigation.replace('PublishSuccess');
+    } catch (err) {
+      Alert.alert('Could not publish product', getApiErrorMessage(err));
+    } finally {
+      setPublishing(false);
+    }
   }
 
   function handleSaveDraft() {
-    publishDraft('draft');
-    resetDraft();
+    // There's no backend concept of an unsubmitted draft product — only "Publish Now" creates
+    // a real product server-side. Saving as a draft just keeps the in-progress wizard state
+    // around locally (so the vendor can resume it later) without calling the API.
     navigation.reset({ index: 0, routes: [{ name: 'ProductCatalog' }] });
   }
 
@@ -63,12 +74,13 @@ export function PublishProductScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.footer}>
-          <Button label="Publish Now" onPress={handlePublishNow} />
-          <Button label="Save as Draft" variant="outline" onPress={handleSaveDraft} />
+          <Button label="Publish Now" onPress={handlePublishNow} loading={publishing} disabled={publishing} />
+          <Button label="Save as Draft" variant="outline" onPress={handleSaveDraft} disabled={publishing} />
           <Button
             label="Schedule for later"
             variant="text"
             onPress={() => Alert.alert('Schedule for later', 'Coming soon.')}
+            disabled={publishing}
           />
         </View>
       </ScrollView>

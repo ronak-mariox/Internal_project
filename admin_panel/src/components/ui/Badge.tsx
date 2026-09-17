@@ -42,14 +42,13 @@ export function Badge({
 }
 
 const ORDER_STATUS_TONE: Record<string, Tone> = {
-  new: 'info',
+  placed: 'info',
+  accepted: 'violet',
   preparing: 'orange',
-  'quality-check': 'violet',
-  packing: 'orange',
-  'ready-for-dispatch': 'teal',
-  dispatched: 'indigo',
-  completed: 'success',
+  ready_for_pickup: 'teal',
+  out_for_delivery: 'indigo',
   delivered: 'success',
+  completed: 'success',
   cancelled: 'neutral',
   failed: 'danger',
   active: 'success',
@@ -67,6 +66,7 @@ const ORDER_STATUS_TONE: Record<string, Tone> = {
   expired: 'neutral',
   paused: 'warning',
   draft: 'neutral',
+  inactive: 'neutral',
   'low-stock': 'warning',
   'out-of-stock': 'danger',
   open: 'warning',

@@ -1,4 +1,5 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { api } from '../services/api';
 
 export type ProductStatus =
   | 'active'
@@ -46,210 +47,308 @@ export type Product = {
   updatedAt?: number;
 };
 
-const MOCK_PRODUCTS: Product[] = [
-  {
-    id: 'p1',
-    name: 'Tata Salt (500g)',
-    brand: 'Tata',
-    categoryId: 'grocery-staples',
-    categoryName: 'Grocery & Staples',
-    subcategoryId: 'salt-sugar-jaggery',
-    subcategoryName: 'Salt, Sugar & Jaggery',
-    mrp: 22,
-    sellingPrice: 20,
-    stock: 284,
-    reorderLevel: 20,
-    maxStock: 500,
-    status: 'active',
-    sku: 'TATA-SALT-500G',
-    barcode: '8901058000356',
-    hsnCode: '2501',
-    gstRate: '0',
-    packSize: '500g',
-    countryOfOrigin: 'India',
-    description: 'Vacuum evaporated iodised salt for better health and taste. Free-flowing and pure.',
-    galleryCount: 2,
-    variants: [
-      { id: 'v250g', size: '250g', mrp: 12, sellingPrice: 11, isPrimary: false },
-      { id: 'v500g', size: '500g', mrp: 22, sellingPrice: 20, isPrimary: true },
-      { id: 'v1kg', size: '1kg', mrp: 42, sellingPrice: 39, isPrimary: false },
-    ],
-    updatedAt: Date.now() - 2 * 60 * 60 * 1000,
-  },
-  {
-    id: 'p2',
-    name: 'Amul Full Cream Milk',
-    brand: 'Amul',
-    categoryId: 'dairy-eggs',
-    categoryName: 'Dairy & Eggs',
-    subcategoryId: 'milk',
-    subcategoryName: 'Milk',
-    mrp: 60,
-    sellingPrice: 58,
-    stock: 8,
-    reorderLevel: 15,
-    maxStock: 200,
-    status: 'low-stock',
-    sku: 'AMUL-MILK-1L',
-    packSize: '1L',
-    hsnCode: '0401',
-    gstRate: '5',
-    updatedAt: Date.now() - 26 * 60 * 60 * 1000,
-  },
-  {
-    id: 'p3',
-    name: 'Fortune Sunflower Oil 1L',
-    brand: 'Fortune',
-    categoryId: 'grocery-staples',
-    categoryName: 'Grocery & Staples',
-    subcategoryId: 'edible-oils',
-    subcategoryName: 'Edible Oils',
-    mrp: 145,
-    sellingPrice: 132,
-    stock: 0,
-    reorderLevel: 10,
-    maxStock: 150,
-    status: 'out-of-stock',
-    sku: 'FORTUNE-OIL-1L',
-    packSize: '1L',
-  },
-  {
-    id: 'p4',
-    name: 'Surf Excel Matic 1kg',
-    brand: 'Surf Excel',
-    categoryId: 'household-cleaning',
-    categoryName: 'Household & Cleaning',
-    subcategoryId: 'detergents',
-    subcategoryName: 'Detergents',
-    mrp: 195,
-    sellingPrice: 175,
-    stock: 42,
-    reorderLevel: 15,
-    maxStock: 120,
-    status: 'active',
-    sku: 'SURF-EXCEL-1KG',
-    packSize: '1kg',
-    updatedAt: Date.now() - 3 * 24 * 60 * 60 * 1000,
-  },
-  {
-    id: 'p5',
-    name: 'Maggi Masala Noodles',
-    brand: 'Nestlé',
-    categoryId: 'snacks-beverages',
-    categoryName: 'Snacks & Beverages',
-    subcategoryId: 'ready-to-eat',
-    subcategoryName: 'Ready to Eat',
-    mrp: 14,
-    sellingPrice: 13,
-    stock: 0,
-    reorderLevel: 20,
-    maxStock: 300,
-    status: 'draft',
-    sku: 'MAGGI-MASALA-70G',
-    packSize: '70g',
-  },
-  {
-    id: 'p6',
-    name: 'Dettol Hand Sanitizer',
-    brand: 'Dettol',
-    categoryId: 'personal-care',
-    categoryName: 'Personal Care',
-    subcategoryId: 'bath-body',
-    subcategoryName: 'Bath & Body',
-    mrp: 99,
-    sellingPrice: 88,
-    stock: 156,
-    reorderLevel: 25,
-    maxStock: 250,
-    status: 'inactive',
-    sku: 'DETTOL-SANITIZER-200ML',
-    packSize: '200ml',
-  },
-  {
-    id: 'p7',
-    name: 'Colgate Strong Teeth',
-    brand: 'Colgate',
-    categoryId: 'personal-care',
-    categoryName: 'Personal Care',
-    subcategoryId: 'oral-care',
-    subcategoryName: 'Oral Care',
-    mrp: 72,
-    sellingPrice: 65,
-    stock: 78,
-    reorderLevel: 20,
-    maxStock: 200,
-    status: 'pending',
-    sku: 'COLGATE-STRONG-150G',
-    packSize: '150g',
-  },
-  {
-    id: 'p8',
-    name: "Lay's Classic Salted",
-    brand: "Lay's",
-    categoryId: 'snacks-beverages',
-    categoryName: 'Snacks & Beverages',
-    subcategoryId: 'chips-namkeen',
-    subcategoryName: 'Chips & Namkeen',
-    mrp: 22,
-    sellingPrice: 20,
-    stock: 0,
-    reorderLevel: 30,
-    maxStock: 300,
-    status: 'error',
-    sku: 'LAYS-SALTED-52G',
-    packSize: '52g',
-  },
-  {
-    id: 'p9',
-    name: 'Aashirvaad Atta 5kg',
-    brand: 'ITC',
-    categoryId: 'grocery-staples',
-    categoryName: 'Grocery & Staples',
-    subcategoryId: 'rice-wheat',
-    subcategoryName: 'Rice & Wheat',
-    mrp: 285,
-    sellingPrice: 285,
-    stock: 0,
-    reorderLevel: 10,
-    maxStock: 100,
-    status: 'uploading',
-    sku: 'AASHIRVAAD-ATTA-5KG',
-    packSize: '5kg',
-  },
-];
+/** A category as returned by `GET /vendor/categories`. */
+export type VendorCategory = {
+  id: string;
+  name: string;
+  subcategories: { id: string; name: string }[];
+};
+
+// ---------------------------------------------------------------------------
+// Backend (API) shapes — these mirror the vendor products/categories contract.
+// ---------------------------------------------------------------------------
+
+type ApiCategory = {
+  id: string;
+  name: string;
+  slug: string;
+  imageUrl?: string;
+  sortOrder: number;
+  isActive: boolean;
+  showOnHome: boolean;
+  subcategories: { id: string; name: string; imageUrl?: string; isActive: boolean }[];
+};
+
+type ApiVariant = {
+  id: string;
+  label: string;
+  mrp: number;
+  price: number;
+  stock: number;
+  sku?: string;
+  isPrimary?: boolean;
+};
+
+type ApiProduct = {
+  id: string;
+  vendorId: string;
+  categoryId: string;
+  subcategoryId?: string;
+  name: string;
+  description?: string;
+  brand?: string;
+  unit?: string;
+  images: string[];
+  variants: ApiVariant[];
+  tags: string[];
+  taxRate: number;
+  status: 'draft' | 'pending' | 'active' | 'inactive' | 'rejected';
+  rejectionReason?: string;
+  isAvailable: boolean;
+  sku?: string;
+  barcode?: string;
+  hsnCode?: string;
+  countryOfOrigin?: string;
+  reorderLevel?: number;
+  maxStock?: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Input shape accepted by `addProduct`, closely mirroring the `POST /vendor/products` body. */
+export type CreateProductInput = {
+  categoryId: string;
+  subcategoryId?: string;
+  name: string;
+  description?: string;
+  brand?: string;
+  unit?: string;
+  images?: string[];
+  variants: {
+    id?: string;
+    label: string;
+    mrp: number;
+    price: number;
+    stock: number;
+    sku?: string;
+    isPrimary?: boolean;
+  }[];
+  tags?: string[];
+  taxRate?: number;
+  sku?: string;
+  barcode?: string;
+  hsnCode?: string;
+  countryOfOrigin?: string;
+  reorderLevel?: number;
+  maxStock?: number;
+};
+
+function primaryVariant(variants: ApiVariant[]): ApiVariant | undefined {
+  return variants.find(variant => variant.isPrimary) ?? variants[0];
+}
+
+/**
+ * Derives the local display status from the backend product status + current stock.
+ * Backend `status` is admin-controlled (pending/active/rejected) and `isAvailable` is the
+ * vendor's own pause/activate toggle. `low-stock`/`out-of-stock` don't exist server-side —
+ * they're derived here from the real stock level of an active, available product.
+ */
+function deriveStatus(apiProduct: ApiProduct, stock: number): ProductStatus {
+  if (apiProduct.status === 'rejected') return 'rejected';
+  if (apiProduct.status === 'pending') return 'pending';
+  if (apiProduct.status === 'inactive' || !apiProduct.isAvailable) return 'inactive';
+  if (stock <= 0) return 'out-of-stock';
+  if (stock <= (apiProduct.reorderLevel ?? 0)) return 'low-stock';
+  return 'active';
+}
+
+function mapProduct(apiProduct: ApiProduct, categories: ApiCategory[]): Product {
+  const variant = primaryVariant(apiProduct.variants);
+  const category = categories.find(item => item.id === apiProduct.categoryId);
+  const subcategory = category?.subcategories.find(item => item.id === apiProduct.subcategoryId);
+  const stock = variant?.stock ?? 0;
+
+  return {
+    id: apiProduct.id,
+    name: apiProduct.name,
+    brand: apiProduct.brand ?? '',
+    categoryId: apiProduct.categoryId,
+    categoryName: category?.name ?? '',
+    subcategoryId: apiProduct.subcategoryId ?? '',
+    subcategoryName: subcategory?.name ?? '',
+    mrp: variant?.mrp ?? 0,
+    sellingPrice: variant?.price ?? 0,
+    stock,
+    reorderLevel: apiProduct.reorderLevel ?? 0,
+    maxStock: apiProduct.maxStock ?? 0,
+    status: deriveStatus(apiProduct, stock),
+    sku: apiProduct.sku ?? '',
+    barcode: apiProduct.barcode,
+    hsnCode: apiProduct.hsnCode,
+    gstRate: apiProduct.taxRate != null ? String(apiProduct.taxRate) : undefined,
+    packSize: variant?.label || apiProduct.unit || undefined,
+    countryOfOrigin: apiProduct.countryOfOrigin,
+    description: apiProduct.description,
+    galleryCount: apiProduct.images?.length ?? 0,
+    variants: apiProduct.variants.map(item => ({
+      id: item.id,
+      size: item.label,
+      mrp: item.mrp,
+      sellingPrice: item.price,
+      isPrimary: !!item.isPrimary,
+    })),
+    updatedAt: apiProduct.updatedAt ? new Date(apiProduct.updatedAt).getTime() : undefined,
+  };
+}
+
+/**
+ * Builds the full backend `variants` array to send on a PATCH, applying a partial local patch
+ * (mrp/sellingPrice/variants) on top of the product's current backend variants so fields we
+ * aren't touching (like per-variant stock, which the local patch shape doesn't carry) survive.
+ */
+function mergeVariantsForPatch(raw: ApiProduct, patch: Partial<Product>): ApiVariant[] | undefined {
+  if (patch.variants) {
+    return patch.variants.map(local => {
+      const existing = raw.variants.find(v => v.id === local.id);
+      return {
+        id: local.id,
+        label: local.size,
+        mrp: local.mrp,
+        price: local.sellingPrice,
+        stock: existing?.stock ?? 0,
+        sku: existing?.sku,
+        isPrimary: local.isPrimary,
+      };
+    });
+  }
+
+  if (patch.mrp !== undefined || patch.sellingPrice !== undefined) {
+    const current = primaryVariant(raw.variants);
+    if (!current) return undefined;
+    return raw.variants.map(variant =>
+      variant.id === current.id
+        ? {
+            ...variant,
+            mrp: patch.mrp !== undefined ? patch.mrp : variant.mrp,
+            price: patch.sellingPrice !== undefined ? patch.sellingPrice : variant.price,
+          }
+        : variant,
+    );
+  }
+
+  return undefined;
+}
 
 type ProductCatalogContextValue = {
   products: Product[];
-  addProduct: (product: Product) => void;
-  setProductStatus: (id: string, status: ProductStatus) => void;
-  removeProduct: (id: string) => void;
-  updateProduct: (id: string, patch: Partial<Product>) => void;
+  categories: VendorCategory[];
+  loading: boolean;
+  refreshProducts: () => Promise<void>;
+  addProduct: (input: CreateProductInput) => Promise<Product>;
+  setProductStatus: (id: string, status: ProductStatus) => Promise<void>;
+  removeProduct: (id: string) => Promise<void>;
+  updateProduct: (id: string, patch: Partial<Product>) => Promise<void>;
 };
 
 const ProductCatalogContext = createContext<ProductCatalogContextValue | null>(null);
 
 export function ProductCatalogProvider({ children }: { children: React.ReactNode }) {
-  const [products, setProducts] = useState<Product[]>(MOCK_PRODUCTS);
+  const [rawProducts, setRawProducts] = useState<ApiProduct[]>([]);
+  const [rawCategories, setRawCategories] = useState<ApiCategory[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const addProduct = useCallback((product: Product) => {
-    setProducts(prev => [product, ...prev]);
+  const loadAll = useCallback(async () => {
+    const [productsRes, categoriesRes] = await Promise.all([
+      api.get<ApiProduct[]>('/vendor/products'),
+      api.get<ApiCategory[]>('/vendor/categories'),
+    ]);
+    setRawProducts(productsRes.data);
+    setRawCategories(categoriesRes.data);
   }, []);
 
-  const setProductStatus = useCallback((id: string, status: ProductStatus) => {
-    setProducts(prev => prev.map(item => (item.id === id ? { ...item, status } : item)));
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    loadAll()
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [loadAll]);
+
+  const refreshProducts = useCallback(async () => {
+    await loadAll();
+  }, [loadAll]);
+
+  const products = useMemo(
+    () => rawProducts.map(item => mapProduct(item, rawCategories)),
+    [rawProducts, rawCategories],
+  );
+
+  const categories = useMemo<VendorCategory[]>(
+    () =>
+      rawCategories.map(category => ({
+        id: category.id,
+        name: category.name,
+        subcategories: category.subcategories.map(sub => ({ id: sub.id, name: sub.name })),
+      })),
+    [rawCategories],
+  );
+
+  const addProduct = useCallback(
+    async (input: CreateProductInput) => {
+      const { data } = await api.post<ApiProduct>('/vendor/products', input);
+      setRawProducts(prev => [data, ...prev]);
+      return mapProduct(data, rawCategories);
+    },
+    [rawCategories],
+  );
+
+  const updateProduct = useCallback(
+    async (id: string, patch: Partial<Product>) => {
+      const raw = rawProducts.find(item => item.id === id);
+      if (!raw) return;
+
+      const body: Record<string, unknown> = {};
+      if (patch.name !== undefined) body.name = patch.name;
+      if (patch.brand !== undefined) body.brand = patch.brand;
+      if (patch.categoryId !== undefined) body.categoryId = patch.categoryId;
+      if (patch.subcategoryId !== undefined) body.subcategoryId = patch.subcategoryId;
+      if (patch.description !== undefined) body.description = patch.description;
+      if (patch.hsnCode !== undefined) body.hsnCode = patch.hsnCode;
+      if (patch.barcode !== undefined) body.barcode = patch.barcode;
+      if (patch.sku !== undefined) body.sku = patch.sku;
+      if (patch.countryOfOrigin !== undefined) body.countryOfOrigin = patch.countryOfOrigin;
+      if (patch.packSize !== undefined) body.unit = patch.packSize;
+      if (patch.gstRate !== undefined) body.taxRate = parseFloat(patch.gstRate) || 0;
+      if (patch.reorderLevel !== undefined) body.reorderLevel = patch.reorderLevel;
+      if (patch.maxStock !== undefined) body.maxStock = patch.maxStock;
+
+      const mergedVariants = mergeVariantsForPatch(raw, patch);
+      if (mergedVariants) body.variants = mergedVariants;
+
+      if (Object.keys(body).length === 0) {
+        // Nothing backend-relevant changed (e.g. a local-only field like `galleryCount`) — there's
+        // no server model for it in this pass, so there's nothing to persist.
+        return;
+      }
+
+      const { data } = await api.patch<ApiProduct>(`/vendor/products/${id}`, body);
+      setRawProducts(prev => prev.map(item => (item.id === id ? data : item)));
+    },
+    [rawProducts],
+  );
+
+  const removeProduct = useCallback(async (id: string) => {
+    await api.delete(`/vendor/products/${id}`);
+    setRawProducts(prev => prev.filter(item => item.id !== id));
   }, []);
 
-  const removeProduct = useCallback((id: string) => {
-    setProducts(prev => prev.filter(item => item.id !== id));
-  }, []);
-
-  const updateProduct = useCallback((id: string, patch: Partial<Product>) => {
-    setProducts(prev => prev.map(item => (item.id === id ? { ...item, ...patch } : item)));
+  const setProductStatus = useCallback(async (id: string, status: ProductStatus) => {
+    // Vendors can't set the admin-controlled `status` enum directly — the only self-service
+    // control they have is the availability (pause/activate) toggle.
+    const { data } = await api.patch<ApiProduct>(`/vendor/products/${id}/availability`, {
+      isAvailable: status !== 'inactive',
+    });
+    setRawProducts(prev => prev.map(item => (item.id === id ? data : item)));
   }, []);
 
   const value = useMemo(
-    () => ({ products, addProduct, setProductStatus, removeProduct, updateProduct }),
-    [products, addProduct, setProductStatus, removeProduct, updateProduct],
+    () => ({ products, categories, loading, refreshProducts, addProduct, setProductStatus, removeProduct, updateProduct }),
+    [products, categories, loading, refreshProducts, addProduct, setProductStatus, removeProduct, updateProduct],
   );
 
   return <ProductCatalogContext.Provider value={value}>{children}</ProductCatalogContext.Provider>;

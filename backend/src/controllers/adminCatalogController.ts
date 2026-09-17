@@ -133,7 +133,21 @@ export async function updateProductForAdmin(req: Request, res: Response) {
   const product = await Product.findById(req.params.id);
   if (!product) throw new HttpError(404, 'Product not found');
 
-  const { name, description, images, variants, tags, taxRate, isAvailable } = req.body;
+  const {
+    name,
+    description,
+    images,
+    variants,
+    tags,
+    taxRate,
+    isAvailable,
+    sku,
+    barcode,
+    hsnCode,
+    countryOfOrigin,
+    reorderLevel,
+    maxStock,
+  } = req.body;
   Object.assign(product, {
     ...(name !== undefined && { name }),
     ...(description !== undefined && { description }),
@@ -142,6 +156,12 @@ export async function updateProductForAdmin(req: Request, res: Response) {
     ...(tags !== undefined && { tags }),
     ...(taxRate !== undefined && { taxRate }),
     ...(isAvailable !== undefined && { isAvailable }),
+    ...(sku !== undefined && { sku }),
+    ...(barcode !== undefined && { barcode }),
+    ...(hsnCode !== undefined && { hsnCode }),
+    ...(countryOfOrigin !== undefined && { countryOfOrigin }),
+    ...(reorderLevel !== undefined && { reorderLevel }),
+    ...(maxStock !== undefined && { maxStock }),
   });
   await product.save();
   res.json(toSafeJson(product));

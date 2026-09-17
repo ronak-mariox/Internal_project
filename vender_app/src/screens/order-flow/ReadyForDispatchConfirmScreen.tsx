@@ -1,9 +1,10 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { Icon } from '../../icons/Icon';
 import { useOrders } from '../../context/OrdersContext';
+import { getApiErrorMessage } from '../../services/api';
 import { colors, radii, spacing, typography } from '../../theme';
 import { FlowStatusScreen } from './FlowStatusScreen';
 import { FlexButton } from './FlexButton';
@@ -14,11 +15,20 @@ export function ReadyForDispatchConfirmScreen({ navigation, route }: Props) {
   const { orderId } = route.params;
   const { getOrder, markPacked } = useOrders();
   const order = getOrder(orderId);
+  const [confirming, setConfirming] = useState(false);
   if (!order) return null;
 
-  function handleConfirm() {
-    markPacked(orderId);
-    navigation.replace('DispatchQueue', { orderId });
+  async function handleConfirm() {
+    if (confirming) return;
+    setConfirming(true);
+    try {
+      await markPacked(orderId);
+      navigation.replace('DispatchQueue', { orderId });
+    } catch (err) {
+      Alert.alert('Could not update order', getApiErrorMessage(err));
+    } finally {
+      setConfirming(false);
+    }
   }
 
   return (
@@ -33,11 +43,12 @@ export function ReadyForDispatchConfirmScreen({ navigation, route }: Props) {
       subtitle="Once marked ready, the system will assign a delivery partner automatically."
       footer={
         <FlexButton
-          label="Mark Ready for Dispatch"
+          label={confirming ? 'Updating…' : 'Mark Ready for Dispatch'}
           onPress={handleConfirm}
           background="#0891B2"
           textColor={colors.white}
           flex={1}
+          disabled={confirming}
         />
       }
     >

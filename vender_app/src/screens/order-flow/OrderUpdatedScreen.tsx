@@ -1,10 +1,11 @@
-import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { Icon } from '../../icons/Icon';
 import { useOrders } from '../../context/OrdersContext';
+import { getApiErrorMessage } from '../../services/api';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 import { FlexButton } from './FlexButton';
 
@@ -14,6 +15,7 @@ export function OrderUpdatedScreen({ navigation, route }: Props) {
   const { orderId, resolution, itemName, itemPrice, source } = route.params;
   const { getOrder, startQualityCheck, passQualityCheck } = useOrders();
   const order = getOrder(orderId);
+  const [continuing, setContinuing] = useState(false);
   if (!order) return null;
 
   const bannerMessage =
@@ -21,10 +23,18 @@ export function OrderUpdatedScreen({ navigation, route }: Props) {
       ? '1 item removed · Customer notified via SMS · Refund initiated'
       : `1 item replaced with ${itemName} · Customer notified via SMS`;
 
-  function handleContinue() {
+  async function handleContinue() {
+    if (continuing) return;
     if (source === 'qc') {
-      passQualityCheck(orderId);
-      navigation.replace('QCPassed', { orderId });
+      setContinuing(true);
+      try {
+        await passQualityCheck(orderId);
+        navigation.replace('QCPassed', { orderId });
+      } catch (err) {
+        Alert.alert('Could not update order', getApiErrorMessage(err));
+      } finally {
+        setContinuing(false);
+      }
     } else {
       startQualityCheck(orderId);
       navigation.replace('QualityCheckFlow', { orderId });
@@ -99,11 +109,14 @@ export function OrderUpdatedScreen({ navigation, route }: Props) {
 
       <View style={styles.footer}>
         <FlexButton
-          label={source === 'qc' ? 'Continue to Packing →' : 'Proceed to Quality Check →'}
+          label={
+            continuing ? 'Updating…' : source === 'qc' ? 'Continue to Packing →' : 'Proceed to Quality Check →'
+          }
           onPress={handleContinue}
           background={colors.primary}
           textColor={colors.white}
           flex={1}
+          disabled={continuing}
         />
       </View>
     </SafeAreaView>

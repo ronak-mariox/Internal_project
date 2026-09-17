@@ -1,7 +1,9 @@
 import React from 'react';
+import { Alert } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { useOrders } from '../../context/OrdersContext';
+import { getApiErrorMessage } from '../../services/api';
 import { ItemIssueDecisionView } from './ItemIssueDecisionView';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'MissingItemDecision'>;
@@ -18,7 +20,10 @@ function skuFor(name: string) {
 
 export function MissingItemDecisionScreen({ navigation, route }: Props) {
   const { orderId, itemName, itemPrice, itemQty } = route.params;
-  const { rejectOrder } = useOrders();
+  // This order has already been accepted by the time an item goes missing during picking, so
+  // the real backend state machine requires the vendor-cancel endpoint here, not the pre-accept
+  // reject endpoint (which only works while the order is still in "placed").
+  const { cancelAcceptedOrder } = useOrders();
 
   return (
     <ItemIssueDecisionView
@@ -52,9 +57,13 @@ export function MissingItemDecisionScreen({ navigation, route }: Props) {
           label: 'Cancel Entire Order',
           hint: 'Cancel if item is essential',
           tone: 'error',
-          onPress: () => {
-            rejectOrder(orderId, `${itemName} out of stock`);
-            navigation.replace('RejectOrderConfirmation', { orderId, reasonLabel: `${itemName} out of stock` });
+          onPress: async () => {
+            try {
+              await cancelAcceptedOrder(orderId, `${itemName} out of stock`);
+              navigation.replace('RejectOrderConfirmation', { orderId, reasonLabel: `${itemName} out of stock` });
+            } catch (err) {
+              Alert.alert('Could not cancel order', getApiErrorMessage(err));
+            }
           },
         },
       ]}

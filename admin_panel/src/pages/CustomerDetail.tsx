@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -13,6 +13,8 @@ import {
   UserX,
   UserCheck,
   Users,
+  Loader2,
+  AlertTriangle,
 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card, CardBody } from '@/components/ui/Card';
@@ -23,41 +25,164 @@ import { Button } from '@/components/ui/Button';
 import { Table, Thead, Th, Tr, Td } from '@/components/ui/Table';
 import { Modal } from '@/components/ui/Drawer';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { customerById } from '@/data/customers';
-import { orders } from '@/data/orders';
-import type { CustomerStatus } from '@/types';
+import { InlineAlert } from '@/components/ui/InlineAlert';
+import type { Customer, CustomerStatus, Order } from '@/types';
 import { ORDER_STATUS_META } from '@/types';
 import { formatCurrency, formatDate, timeAgo } from '@/lib/format';
+import { api, fetchAllPaginated } from '@/lib/api';
+import { mapOrder, errorMessage, type ApiDriver, type ApiOrder, type ApiVendor } from '@/lib/adminOrders';
+import { avatarColorFor } from '@/lib/avatarColor';
+
+interface ApiCustomer {
+  id: string;
+  phone: string;
+  name?: string;
+  email?: string;
+  status: CustomerStatus;
+  createdAt: string;
+}
+
+function mapCustomer(c: ApiCustomer): Customer {
+  return {
+    id: c.id,
+    name: c.name || c.phone,
+    email: c.email ?? '—',
+    phone: c.phone,
+    avatarColor: avatarColorFor(c.id),
+    city: '—',
+    status: c.status,
+    totalOrders: 0,
+    totalSpent: 0,
+    joinedAt: c.createdAt,
+    lastOrderAt: undefined,
+  };
+}
 
 export function CustomerDetail() {
   const { customerId } = useParams<{ customerId: string }>();
-  const customer = customerId ? customerById(customerId) : undefined;
 
-  const [status, setStatus] = useState<CustomerStatus>(customer?.status ?? 'active');
+  const [customerApi, setCustomerApi] = useState<ApiCustomer | null>(null);
+  const [customerOrders, setCustomerOrders] = useState<Order[]>([]);
+  const [orderStats, setOrderStats] = useState<{ totalOrders: number; totalSpent: number; lastOrderAt?: string }>({
+    totalOrders: 0,
+    totalSpent: 0,
+  });
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [updating, setUpdating] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const customerOrders = useMemo(
-    () => orders.filter((o) => o.customerId === customerId),
-    [customerId],
-  );
+  useEffect(() => {
+    if (!customerId) return;
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setLoadError(null);
+      setNotFound(false);
+      try {
+        const c = await api.get<ApiCustomer>(`/admin/customers/${customerId}`);
+        const ordersRaw = await fetchAllPaginated<ApiOrder>('/admin/orders', { customerId });
 
-  if (!customer) {
+        const vendorIds = Array.from(new Set(ordersRaw.map((o) => o.vendorId)));
+        const driverIds = Array.from(new Set(ordersRaw.map((o) => o.driverId).filter(Boolean))) as string[];
+        const [vendors, drivers] = await Promise.all([
+          vendorIds.length ? api.get<ApiVendor[]>('/admin/vendors') : Promise.resolve([] as ApiVendor[]),
+          driverIds.length ? api.get<ApiDriver[]>('/admin/drivers') : Promise.resolve([] as ApiDriver[]),
+        ]);
+        if (cancelled) return;
+
+        const customerById = new Map([[c.id, c]]);
+        const vendorById = new Map(vendors.map((v) => [v.id, v]));
+        const driverById = new Map(drivers.map((d) => [d.id, d]));
+
+        const mappedOrders = ordersRaw
+          .map((o) => mapOrder(o, customerById, vendorById, driverById))
+          .sort((a, b) => new Date(b.placedAt).getTime() - new Date(a.placedAt).getTime());
+
+        const totalSpent = mappedOrders.reduce((sum, o) => sum + o.total, 0);
+
+        setCustomerApi(c);
+        setCustomerOrders(mappedOrders);
+        setOrderStats({
+          totalOrders: mappedOrders.length,
+          totalSpent,
+          lastOrderAt: mappedOrders[0]?.placedAt,
+        });
+      } catch (err) {
+        if (cancelled) return;
+        if (err && typeof err === 'object' && 'status' in err && (err as { status: number }).status === 404) {
+          setNotFound(true);
+        } else {
+          setLoadError(errorMessage(err, 'Failed to load customer'));
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [customerId, reloadKey]);
+
+  const customer = customerApi ? { ...mapCustomer(customerApi), ...orderStats } : null;
+
+  async function updateStatus(status: CustomerStatus) {
+    if (!customerId) return;
+    setActionError(null);
+    setUpdating(true);
+    try {
+      const updated = await api.patch<ApiCustomer>(`/admin/customers/${customerId}/status`, { status });
+      setCustomerApi(updated);
+    } catch (err) {
+      setActionError(errorMessage(err, 'Failed to update customer status'));
+    } finally {
+      setUpdating(false);
+    }
+  }
+
+  if (loading) {
     return (
       <div>
         <Link to="/customers" className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-ink-500 hover:text-ink-800">
           <ArrowLeft size={15} /> Back to customers
         </Link>
         <Card>
-          <EmptyState
-            icon={<Users size={24} />}
-            title="Customer not found"
-            description="This customer may have been removed or the link is incorrect."
-            action={
-              <Link to="/customers">
-                <Button variant="outline">Go to customers</Button>
-              </Link>
-            }
-          />
+          <EmptyState icon={<Loader2 size={24} className="animate-spin" />} title="Loading customer…" />
+        </Card>
+      </div>
+    );
+  }
+
+  if (notFound || !customer) {
+    return (
+      <div>
+        <Link to="/customers" className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-ink-500 hover:text-ink-800">
+          <ArrowLeft size={15} /> Back to customers
+        </Link>
+        <Card>
+          {loadError ? (
+            <EmptyState
+              icon={<AlertTriangle size={24} />}
+              title="Couldn't load customer"
+              description={loadError}
+              action={<Button onClick={() => setReloadKey((k) => k + 1)}>Retry</Button>}
+            />
+          ) : (
+            <EmptyState
+              icon={<Users size={24} />}
+              title="Customer not found"
+              description="This customer may have been removed or the link is incorrect."
+              action={
+                <Link to="/customers">
+                  <Button variant="outline">Go to customers</Button>
+                </Link>
+              }
+            />
+          )}
         </Card>
       </div>
     );
@@ -75,17 +200,19 @@ export function CustomerDetail() {
         title={customer.name}
         subtitle={`Customer · ${customer.city}`}
         actions={
-          status === 'blocked' ? (
-            <Button variant="primary" icon={<UserCheck size={16} />} onClick={() => setStatus('active')}>
+          customer.status === 'blocked' ? (
+            <Button variant="primary" icon={<UserCheck size={16} />} onClick={() => updateStatus('active')} disabled={updating}>
               Unblock
             </Button>
           ) : (
-            <Button variant="danger" icon={<UserX size={16} />} onClick={() => setConfirmOpen(true)}>
+            <Button variant="danger" icon={<UserX size={16} />} onClick={() => setConfirmOpen(true)} disabled={updating}>
               Block
             </Button>
           )
         }
       />
+
+      {actionError && <InlineAlert message={actionError} className="mb-4" />}
 
       <Card>
         <CardBody className="flex flex-wrap items-start gap-6">
@@ -93,7 +220,7 @@ export function CustomerDetail() {
           <div className="min-w-[220px] flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="font-display text-lg font-semibold text-ink-900">{customer.name}</h2>
-              <StatusBadge status={status} />
+              <StatusBadge status={customer.status} />
             </div>
             <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
               <div className="flex items-center gap-2 text-[13px] text-ink-600">
@@ -109,7 +236,8 @@ export function CustomerDetail() {
                 <Calendar size={14} className="text-ink-400" /> Joined {formatDate(customer.joinedAt)}
               </div>
               <div className="flex items-center gap-2 text-[13px] text-ink-600">
-                <Clock size={14} className="text-ink-400" /> Last order {timeAgo(customer.lastOrderAt)}
+                <Clock size={14} className="text-ink-400" /> Last order{' '}
+                {customer.lastOrderAt ? timeAgo(customer.lastOrderAt) : '—'}
               </div>
             </div>
           </div>
@@ -167,7 +295,7 @@ export function CustomerDetail() {
                 <Tr key={o.id}>
                   <Td>
                     <Link to={`/orders/${o.id}`} className="font-semibold text-ink-800 hover:text-brand-700">
-                      {o.id}
+                      {o.orderNumber ?? o.id}
                     </Link>
                   </Td>
                   <Td>{o.vendorName}</Td>
@@ -196,7 +324,7 @@ export function CustomerDetail() {
             <Button
               variant="danger"
               onClick={() => {
-                setStatus('blocked');
+                updateStatus('blocked');
                 setConfirmOpen(false);
               }}
             >

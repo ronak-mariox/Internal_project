@@ -13,15 +13,15 @@ export const ORDER_TRANSITIONS: Record<OrderStatus, { to: OrderStatus; by: Array
   ],
   accepted: [
     { to: 'preparing', by: ['vendor', 'admin'] },
-    { to: 'cancelled', by: ['customer', 'admin'] },
+    { to: 'cancelled', by: ['customer', 'vendor', 'admin'] },
   ],
   preparing: [
     { to: 'ready_for_pickup', by: ['vendor', 'admin'] },
-    { to: 'cancelled', by: ['admin'] },
+    { to: 'cancelled', by: ['vendor', 'admin'] },
   ],
   ready_for_pickup: [
     { to: 'out_for_delivery', by: ['vendor', 'admin'] },
-    { to: 'cancelled', by: ['admin'] },
+    { to: 'cancelled', by: ['vendor', 'admin'] },
   ],
   out_for_delivery: [{ to: 'delivered', by: ['vendor', 'admin'] }],
   delivered: [],

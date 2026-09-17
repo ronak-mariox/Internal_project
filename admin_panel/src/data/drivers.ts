@@ -14,10 +14,10 @@ const avatarColors = ['#1CA672', '#3B82F6', '#F79009', '#7C3AED', '#0891B2', '#D
 
 export const drivers: Driver[] = names.map((name, i) => {
   const status = pickWeighted(rng, [
-    ['online', 30],
-    ['on-delivery', 25],
-    ['offline', 35],
-    ['suspended', 10],
+    ['active', 55],
+    ['pending', 15],
+    ['suspended', 20],
+    ['rejected', 10],
   ] as const);
   const kycStatus = status === 'suspended' ? pick(rng, ['pending', 'rejected'] as const) : pickWeighted(rng, [['verified', 85], ['pending', 15]] as const);
   return {

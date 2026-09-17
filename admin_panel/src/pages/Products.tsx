@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   PackageSearch,
@@ -10,6 +10,8 @@ import {
   Clock,
   AlertTriangle,
   PackageX,
+  Loader2,
+  ImageOff,
 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
@@ -21,12 +23,12 @@ import { Tabs, type TabItem } from '@/components/ui/Tabs';
 import { Button } from '@/components/ui/Button';
 import { Drawer } from '@/components/ui/Drawer';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { InlineAlert } from '@/components/ui/InlineAlert';
 import { Pagination } from '@/components/ui/Pagination';
-import { products as seedProducts } from '@/data/products';
-import { categories } from '@/data/categories';
 import type { Product, ProductStatus } from '@/types';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { cn } from '@/lib/cn';
+import { api, ApiError, fetchAllPaginated } from '@/lib/api';
 
 const PAGE_SIZE = 12;
 
@@ -37,17 +39,191 @@ const STATUS_LABELS: Record<ProductStatus, string> = {
   'out-of-stock': 'Out of Stock',
   rejected: 'Rejected',
   draft: 'Draft',
+  inactive: 'Inactive',
 };
 
-const STATUS_ORDER: ProductStatus[] = ['active', 'pending', 'low-stock', 'out-of-stock', 'rejected', 'draft'];
+const STATUS_ORDER: ProductStatus[] = ['active', 'pending', 'low-stock', 'out-of-stock', 'rejected', 'draft', 'inactive'];
+
+// ---------------------------------------------------------------------------
+// Backend shapes
+// ---------------------------------------------------------------------------
+
+interface ApiProductVariant {
+  id: string;
+  label: string;
+  mrp: number;
+  price: number;
+  stock: number;
+  sku?: string;
+  isPrimary?: boolean;
+}
+
+interface ApiProduct {
+  id: string;
+  vendorId: string;
+  categoryId: string;
+  subcategoryId?: string;
+  name: string;
+  description?: string;
+  brand?: string;
+  unit?: string;
+  images: string[];
+  variants: ApiProductVariant[];
+  tags: string[];
+  taxRate: number;
+  status: 'draft' | 'pending' | 'active' | 'inactive' | 'rejected';
+  rejectionReason?: string;
+  isAvailable: boolean;
+  sku?: string;
+  reorderLevel?: number;
+  updatedAt: string;
+}
+
+interface ApiSubcategory {
+  id: string;
+  name: string;
+}
+
+interface ApiCategory {
+  id: string;
+  name: string;
+  subcategories: ApiSubcategory[];
+}
+
+interface ApiVendor {
+  id: string;
+  phone: string;
+  fullName?: string;
+  businessInfo?: { displayName?: string };
+  storeProfile?: { storeName?: string };
+}
+
+function vendorDisplayName(v: ApiVendor): string {
+  return v.storeProfile?.storeName || v.businessInfo?.displayName || v.fullName || v.phone;
+}
+
+function mapProduct(
+  p: ApiProduct,
+  categoryNameById: Map<string, string>,
+  subcategoryNameById: Map<string, string>,
+  vendorNameById: Map<string, string>,
+): Product {
+  const variant = p.variants.find((v) => v.isPrimary) ?? p.variants[0];
+  const mrp = variant?.mrp ?? 0;
+  const sellingPrice = variant?.price ?? 0;
+  const stock = variant?.stock ?? 0;
+
+  let status: ProductStatus;
+  if (p.status === 'active') {
+    if (stock <= 0) status = 'out-of-stock';
+    else if (p.reorderLevel != null && stock <= p.reorderLevel) status = 'low-stock';
+    else status = 'active';
+  } else if (p.status === 'pending') {
+    status = 'pending';
+  } else if (p.status === 'rejected') {
+    status = 'rejected';
+  } else if (p.status === 'inactive') {
+    status = 'inactive';
+  } else {
+    status = 'draft';
+  }
+
+  return {
+    id: p.id,
+    name: p.name,
+    brand: p.brand ?? '—',
+    image: p.images[0] ?? '',
+    categoryId: p.categoryId,
+    categoryName: categoryNameById.get(p.categoryId) ?? 'Uncategorised',
+    subcategoryId: p.subcategoryId ?? '',
+    subcategoryName: p.subcategoryId ? subcategoryNameById.get(p.subcategoryId) ?? '—' : '—',
+    vendorId: p.vendorId,
+    vendorName: vendorNameById.get(p.vendorId) ?? 'Unknown vendor',
+    mrp,
+    sellingPrice,
+    unit: p.unit ?? variant?.label ?? '—',
+    stock,
+    reorderLevel: p.reorderLevel ?? 0,
+    sku: p.sku ?? variant?.sku ?? '—',
+    gstRate: p.taxRate,
+    status,
+    rating: 0,
+    ratingCount: 0,
+    updatedAt: p.updatedAt,
+  };
+}
+
+function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof ApiError ? err.message : fallback;
+}
+
+function ProductThumb({ image, name, className }: { image: string; name: string; className?: string }) {
+  if (!image) {
+    return (
+      <div className={cn('flex shrink-0 items-center justify-center rounded-lg bg-ink-100 text-ink-300', className)}>
+        <ImageOff size={16} />
+      </div>
+    );
+  }
+  return <img src={image} alt={name} className={cn('shrink-0 rounded-lg object-cover', className)} />;
+}
 
 export function Products() {
-  const [productsState, setProductsState] = useState<Product[]>(seedProducts);
+  const [apiProducts, setApiProducts] = useState<ApiProduct[]>([]);
+  const [categoriesList, setCategoriesList] = useState<ApiCategory[]>([]);
+  const [vendorsList, setVendorsList] = useState<ApiVendor[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<ProductStatus | 'all'>('all');
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const [productsRaw, categoriesRaw, vendorsRaw] = await Promise.all([
+          fetchAllPaginated<ApiProduct>('/admin/products'),
+          api.get<ApiCategory[]>('/admin/categories'),
+          api.get<ApiVendor[]>('/admin/vendors'),
+        ]);
+        if (cancelled) return;
+        setApiProducts(productsRaw);
+        setCategoriesList(categoriesRaw);
+        setVendorsList(vendorsRaw);
+      } catch (err) {
+        if (!cancelled) setLoadError(errorMessage(err, 'Failed to load products'));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
+
+  const categoryNameById = useMemo(() => new Map(categoriesList.map((c) => [c.id, c.name])), [categoriesList]);
+  const subcategoryNameById = useMemo(
+    () => new Map(categoriesList.flatMap((c) => c.subcategories.map((s) => [s.id, s.name] as const))),
+    [categoriesList],
+  );
+  const vendorNameById = useMemo(
+    () => new Map(vendorsList.map((v) => [v.id, vendorDisplayName(v)])),
+    [vendorsList],
+  );
+
+  const productsState = useMemo(
+    () => apiProducts.map((p) => mapProduct(p, categoryNameById, subcategoryNameById, vendorNameById)),
+    [apiProducts, categoryNameById, subcategoryNameById, vendorNameById],
+  );
 
   const summary = useMemo(() => {
     const total = productsState.length;
@@ -92,9 +268,15 @@ export function Products() {
 
   const selectedProduct = productsState.find((p) => p.id === selectedId) ?? null;
 
-  const setProductStatus = (id: string, status: ProductStatus) => {
-    setProductsState((prev) => prev.map((p) => (p.id === id ? { ...p, status } : p)));
-  };
+  async function setProductStatus(id: string, status: 'active' | 'inactive' | 'rejected') {
+    setActionError(null);
+    try {
+      const updated = await api.patch<ApiProduct>(`/admin/products/${id}/status`, { status });
+      setApiProducts((prev) => prev.map((p) => (p.id === id ? updated : p)));
+    } catch (err) {
+      setActionError(errorMessage(err, 'Failed to update product status'));
+    }
+  }
 
   return (
     <div>
@@ -107,6 +289,8 @@ export function Products() {
           </Button>
         }
       />
+
+      {actionError && <InlineAlert message={actionError} className="mb-4" />}
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatCard
@@ -154,7 +338,7 @@ export function Products() {
               className="sm:w-56"
             >
               <option value="all">All Categories</option>
-              {categories.map((c) => (
+              {categoriesList.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>
@@ -171,7 +355,16 @@ export function Products() {
           />
         </div>
 
-        {pageItems.length === 0 ? (
+        {loading ? (
+          <EmptyState icon={<Loader2 size={22} className="animate-spin" />} title="Loading products…" />
+        ) : loadError ? (
+          <EmptyState
+            icon={<AlertTriangle size={22} />}
+            title="Couldn't load products"
+            description={loadError}
+            action={<Button onClick={() => setReloadKey((k) => k + 1)}>Retry</Button>}
+          />
+        ) : pageItems.length === 0 ? (
           <EmptyState
             icon={<PackageSearch size={22} />}
             title="No products match your filters"
@@ -197,11 +390,7 @@ export function Products() {
                   <Tr key={product.id}>
                     <Td>
                       <div className="flex items-center gap-3">
-                        <img
-                          src={product.image}
-                          alt={product.name}
-                          className="h-10 w-10 shrink-0 rounded-lg object-cover"
-                        />
+                        <ProductThumb image={product.image} name={product.name} className="h-10 w-10" />
                         <div className="min-w-0">
                           <p className="truncate font-medium text-ink-800">{product.name}</p>
                           <p className="text-[12px] text-ink-500">{product.brand}</p>
@@ -294,7 +483,7 @@ export function Products() {
                     Approve
                   </Button>
                 </>
-              ) : selectedProduct.status === 'rejected' || selectedProduct.status === 'draft' ? (
+              ) : selectedProduct.status === 'rejected' || selectedProduct.status === 'draft' || selectedProduct.status === 'inactive' ? (
                 <Button icon={<Power size={15} />} onClick={() => setProductStatus(selectedProduct.id, 'active')}>
                   Activate
                 </Button>
@@ -302,7 +491,7 @@ export function Products() {
                 <Button
                   variant="outline"
                   icon={<Power size={15} />}
-                  onClick={() => setProductStatus(selectedProduct.id, 'draft')}
+                  onClick={() => setProductStatus(selectedProduct.id, 'inactive')}
                 >
                   Deactivate
                 </Button>
@@ -313,11 +502,7 @@ export function Products() {
       >
         {selectedProduct && (
           <div className="space-y-5">
-            <img
-              src={selectedProduct.image}
-              alt={selectedProduct.name}
-              className="h-48 w-full rounded-xl object-cover"
-            />
+            <ProductThumb image={selectedProduct.image} name={selectedProduct.name} className="h-48 w-full" />
 
             <div className="flex items-center justify-between">
               <div>

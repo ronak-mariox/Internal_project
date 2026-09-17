@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
@@ -7,6 +7,7 @@ import { Button, Input, NavHeader } from '../../components';
 import { Icon } from '../../icons/Icon';
 import { useProductCatalog } from '../../context/ProductCatalogContext';
 import { useInventory } from '../../context/InventoryContext';
+import { getApiErrorMessage } from '../../services/api';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'EditStock'>;
@@ -29,6 +30,7 @@ export function EditStockScreen({ navigation, route }: Props) {
   const [newCount, setNewCount] = useState(product?.stock ?? 0);
   const [reason, setReason] = useState(REASONS[0]);
   const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
 
   if (!product) {
     return (
@@ -40,18 +42,26 @@ export function EditStockScreen({ navigation, route }: Props) {
 
   const delta = newCount - product.stock;
 
-  function handleUpdate() {
-    const result = recordStockChange({
-      productId,
-      newStock: newCount,
-      reason,
-      type: delta >= 0 ? 'purchase' : 'adjustment',
-      reference: notes.trim() || undefined,
-    });
-    if (result?.wentOutOfStock) {
-      navigation.replace('OOSConfirmation', { productId });
-    } else {
-      navigation.goBack();
+  async function handleUpdate() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const result = await recordStockChange({
+        productId,
+        newStock: newCount,
+        reason,
+        type: delta >= 0 ? 'purchase' : 'adjustment',
+        reference: notes.trim() || undefined,
+      });
+      if (result?.wentOutOfStock) {
+        navigation.replace('OOSConfirmation', { productId });
+      } else {
+        navigation.goBack();
+      }
+    } catch (err) {
+      Alert.alert('Could not update stock', getApiErrorMessage(err));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -131,7 +141,7 @@ export function EditStockScreen({ navigation, route }: Props) {
         />
 
         <View style={styles.footer}>
-          <Button label="Update Stock" onPress={handleUpdate} />
+          <Button label="Update Stock" onPress={handleUpdate} loading={saving} disabled={saving} />
         </View>
       </ScrollView>
     </SafeAreaView>

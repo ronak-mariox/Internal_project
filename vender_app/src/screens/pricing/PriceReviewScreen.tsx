@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { Button } from '../../components';
 import { Icon } from '../../icons/Icon';
 import { useProductCatalog } from '../../context/ProductCatalogContext';
+import { getApiErrorMessage } from '../../services/api';
 import { colors, radii, spacing, typography } from '../../theme';
 import { PricingBackHeader } from './PricingBackHeader';
 
@@ -21,6 +22,7 @@ export function PriceReviewScreen({ navigation, route }: Props) {
   const { products, updateProduct } = useProductCatalog();
   const product = products.find(item => item.id === productId);
   const [confirmed, setConfirmed] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   if (!product) return null;
 
@@ -35,12 +37,20 @@ export function PriceReviewScreen({ navigation, route }: Props) {
       ? `Selling price for ${product.name} has been updated to ₹${newSellingPrice}.`
       : `MRP for ${product.name} has been updated to ₹${pendingMrp}.`;
 
-  function handleApply() {
+  async function handleApply() {
+    if (saving) return;
     const patch: { mrp?: number; sellingPrice?: number; updatedAt: number } = { updatedAt: Date.now() };
     if (pendingMrp !== undefined) patch.mrp = pendingMrp;
     if (pendingSellingPrice !== undefined) patch.sellingPrice = pendingSellingPrice;
-    updateProduct(productId, patch);
-    navigation.replace('PriceUpdated', { productId, headline, message });
+    setSaving(true);
+    try {
+      await updateProduct(productId, patch);
+      navigation.replace('PriceUpdated', { productId, headline, message });
+    } catch (err) {
+      Alert.alert('Could not apply changes', getApiErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
   }
 
   function handleSimulateFailure() {
@@ -113,7 +123,7 @@ export function PriceReviewScreen({ navigation, route }: Props) {
       </ScrollView>
 
       <View style={styles.footer}>
-        <Button label="Apply Changes" onPress={handleApply} disabled={!confirmed} />
+        <Button label="Apply Changes" onPress={handleApply} disabled={!confirmed || saving} loading={saving} />
       </View>
     </SafeAreaView>
   );

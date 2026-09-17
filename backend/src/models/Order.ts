@@ -17,6 +17,7 @@ export interface OrderItemSnapshot {
   variantLabel: string;
   imageUrl?: string;
   price: number;
+  mrp: number;
   quantity: number;
   subtotal: number;
 }
@@ -63,6 +64,7 @@ export interface OrderDoc {
   paymentStatus: 'pending' | 'paid' | 'failed' | 'refunded';
   status: OrderStatus;
   statusHistory: OrderStatusEvent[];
+  specialInstructions?: string;
   cancelReason?: string;
   cancelledBy?: 'customer' | 'vendor' | 'admin';
   placedAt: Date;
@@ -79,6 +81,7 @@ const orderItemSchema = new Schema<OrderItemSnapshot>(
     variantLabel: { type: String, required: true },
     imageUrl: String,
     price: { type: Number, required: true },
+    mrp: { type: Number, required: true },
     quantity: { type: Number, required: true },
     subtotal: { type: Number, required: true },
   },
@@ -112,6 +115,7 @@ const orderSchema = new Schema<OrderDoc>(
       default: 'placed',
     },
     statusHistory: { type: [orderStatusEventSchema], default: [] },
+    specialInstructions: String,
     cancelReason: String,
     cancelledBy: { type: String, enum: ['customer', 'vendor', 'admin'] },
     placedAt: { type: Date, required: true },

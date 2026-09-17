@@ -1,9 +1,10 @@
-import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { Icon } from '../../icons/Icon';
 import { useOrders } from '../../context/OrdersContext';
+import { getApiErrorMessage } from '../../services/api';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 import { FlowStatusScreen } from './FlowStatusScreen';
 import { FlexButton } from './FlexButton';
@@ -14,11 +15,20 @@ export function AcceptOrderConfirmScreen({ navigation, route }: Props) {
   const { orderId } = route.params;
   const { getOrder, acceptOrder } = useOrders();
   const order = getOrder(orderId);
+  const [accepting, setAccepting] = useState(false);
   if (!order) return null;
 
-  function handleAccept() {
-    acceptOrder(orderId);
-    navigation.replace('InventoryCheck', { orderId });
+  async function handleAccept() {
+    if (accepting) return;
+    setAccepting(true);
+    try {
+      await acceptOrder(orderId);
+      navigation.replace('InventoryCheck', { orderId });
+    } catch (err) {
+      Alert.alert('Could not accept order', getApiErrorMessage(err));
+    } finally {
+      setAccepting(false);
+    }
   }
 
   return (
@@ -40,13 +50,15 @@ export function AcceptOrderConfirmScreen({ navigation, route }: Props) {
               textColor={colors.textSecondary}
               borderColor={colors.border}
               flex={1}
+              disabled={accepting}
             />
             <FlexButton
-              label="Yes, Accept Order"
+              label={accepting ? 'Accepting…' : 'Yes, Accept Order'}
               onPress={handleAccept}
               background={colors.primary}
               textColor={colors.white}
               flex={1.9}
+              disabled={accepting}
             />
           </View>
           <Pressable

@@ -14,7 +14,7 @@ vendorOrderRouter.get('/:id', param('id').isString().notEmpty(), handleValidatio
 vendorOrderRouter.patch(
   '/:id/status',
   param('id').isString().notEmpty(),
-  body('status').isIn(['accepted', 'rejected', 'preparing', 'ready_for_pickup', 'out_for_delivery', 'delivered']),
+  body('status').isIn(['accepted', 'rejected', 'cancelled', 'preparing', 'ready_for_pickup', 'out_for_delivery', 'delivered']),
   body('note').optional().isString().trim(),
   handleValidation,
   asyncHandler(ctrl.updateOrderStatus),

@@ -1,10 +1,11 @@
-import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { Icon } from '../../icons/Icon';
 import { useOrders } from '../../context/OrdersContext';
+import { getApiErrorMessage } from '../../services/api';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 import { ProgressHeader } from './ProgressHeader';
 import { FlexButton } from './FlexButton';
@@ -38,15 +39,24 @@ export function QualityCheckFlowScreen({ navigation, route }: Props) {
   const { orderId } = route.params;
   const { getOrder, passQualityCheck } = useOrders();
   const order = getOrder(orderId);
+  const [passing, setPassing] = useState(false);
   if (!order) return null;
 
   const flagged = findFlaggedItem(order.products);
   const flaggedIndex = flagged ? order.products.indexOf(flagged) : -1;
   const checkedCount = flaggedIndex >= 0 ? flaggedIndex + 1 : order.products.length;
 
-  function handlePass() {
-    passQualityCheck(orderId);
-    navigation.replace('QCPassed', { orderId });
+  async function handlePass() {
+    if (passing) return;
+    setPassing(true);
+    try {
+      await passQualityCheck(orderId);
+      navigation.replace('QCPassed', { orderId });
+    } catch (err) {
+      Alert.alert('Could not update order', getApiErrorMessage(err));
+    } finally {
+      setPassing(false);
+    }
   }
 
   function handleFail() {
@@ -157,14 +167,16 @@ export function QualityCheckFlowScreen({ navigation, route }: Props) {
             textColor={colors.error}
             borderColor={colors.errorBorder}
             flex={1}
+            disabled={passing}
           />
         ) : null}
         <FlexButton
-          label="Pass QC →"
+          label={passing ? 'Updating…' : 'Pass QC →'}
           onPress={handlePass}
           background={QC_ACCENT}
           textColor={colors.white}
           flex={1}
+          disabled={passing}
         />
       </View>
     </SafeAreaView>

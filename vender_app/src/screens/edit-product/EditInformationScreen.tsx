@@ -1,11 +1,12 @@
 import React, { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { Button, Input, NavHeader, SelectField } from '../../components';
 import { CATEGORIES } from '../../data/categories';
 import { useProductCatalog } from '../../context/ProductCatalogContext';
+import { getApiErrorMessage } from '../../services/api';
 import { colors, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'EditInformation'>;
@@ -40,6 +41,7 @@ export function EditInformationScreen({ navigation, route }: Props) {
   const [description, setDescription] = useState(product?.description ?? '');
   const [hsnCode, setHsnCode] = useState(product?.hsnCode ?? '');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
 
   const hsnError = useMemo(() => {
     if (!hsnCode.trim()) return undefined;
@@ -57,7 +59,7 @@ export function EditInformationScreen({ navigation, route }: Props) {
     );
   }
 
-  function handleSave() {
+  async function handleSave() {
     const nextErrors: Record<string, string> = {};
     if (!name.trim()) nextErrors.name = 'Enter the product name';
     if (!brand.trim()) nextErrors.brand = 'Enter the brand';
@@ -68,22 +70,30 @@ export function EditInformationScreen({ navigation, route }: Props) {
     else if (hsnError) nextErrors.hsn = hsnError;
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
+    if (saving) return;
 
     const { category, subcategory } = parseCategoryOption(categoryOption);
 
-    updateProduct(productId, {
-      name: name.trim(),
-      brand: brand.trim(),
-      categoryId: category?.id ?? product!.categoryId,
-      categoryName: category?.name ?? product!.categoryName,
-      subcategoryId: subcategory?.id ?? product!.subcategoryId,
-      subcategoryName: subcategory?.name ?? product!.subcategoryName,
-      packSize: packSize.trim(),
-      countryOfOrigin: country.trim(),
-      description: description.trim(),
-      hsnCode: hsnCode.trim(),
-    });
-    navigation.goBack();
+    setSaving(true);
+    try {
+      await updateProduct(productId, {
+        name: name.trim(),
+        brand: brand.trim(),
+        categoryId: category?.id ?? product!.categoryId,
+        categoryName: category?.name ?? product!.categoryName,
+        subcategoryId: subcategory?.id ?? product!.subcategoryId,
+        subcategoryName: subcategory?.name ?? product!.subcategoryName,
+        packSize: packSize.trim(),
+        countryOfOrigin: country.trim(),
+        description: description.trim(),
+        hsnCode: hsnCode.trim(),
+      });
+      navigation.goBack();
+    } catch (err) {
+      Alert.alert('Could not save', getApiErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (

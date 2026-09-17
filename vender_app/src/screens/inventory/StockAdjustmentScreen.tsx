@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
@@ -8,6 +8,7 @@ import { Icon } from '../../icons/Icon';
 import { useProductCatalog } from '../../context/ProductCatalogContext';
 import { useInventory } from '../../context/InventoryContext';
 import { STOCK_REASONS } from '../../utils/inventory';
+import { getApiErrorMessage } from '../../services/api';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'StockAdjustment'>;
@@ -26,6 +27,7 @@ export function StockAdjustmentScreen({ navigation, route }: Props) {
   const [reference, setReference] = useState('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | undefined>();
+  const [saving, setSaving] = useState(false);
 
   const product = useMemo(() => products.find(item => item.name === productName), [products, productName]);
   const qtyNumber = parseInt(quantity, 10) || 0;
@@ -37,7 +39,7 @@ export function StockAdjustmentScreen({ navigation, route }: Props) {
     return qtyNumber;
   }, [product, adjustmentType, qtyNumber]);
 
-  function handleSave() {
+  async function handleSave() {
     if (!product) {
       setError('Select a product');
       return;
@@ -47,17 +49,25 @@ export function StockAdjustmentScreen({ navigation, route }: Props) {
       return;
     }
     setError(undefined);
-    const result = recordStockChange({
-      productId: product.id,
-      newStock: afterStock,
-      reason,
-      type: adjustmentType === 'Add Stock (Incoming)' ? 'purchase' : 'adjustment',
-      reference: reference.trim() || undefined,
-    });
-    if (result?.wentOutOfStock) {
-      navigation.replace('OOSConfirmation', { productId: product.id });
-    } else {
-      navigation.goBack();
+    if (saving) return;
+    setSaving(true);
+    try {
+      const result = await recordStockChange({
+        productId: product.id,
+        newStock: afterStock,
+        reason,
+        type: adjustmentType === 'Add Stock (Incoming)' ? 'purchase' : 'adjustment',
+        reference: reference.trim() || undefined,
+      });
+      if (result?.wentOutOfStock) {
+        navigation.replace('OOSConfirmation', { productId: product.id });
+      } else {
+        navigation.goBack();
+      }
+    } catch (err) {
+      Alert.alert('Could not save adjustment', getApiErrorMessage(err));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -131,7 +141,7 @@ export function StockAdjustmentScreen({ navigation, route }: Props) {
         </FormSectionCard>
 
         <View style={styles.footer}>
-          <Button label="Save Adjustment" onPress={handleSave} />
+          <Button label="Save Adjustment" onPress={handleSave} loading={saving} disabled={saving} />
         </View>
       </ScrollView>
     </SafeAreaView>

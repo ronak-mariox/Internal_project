@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Activity, CheckCircle2, IndianRupee, PackageSearch, XCircle } from 'lucide-react';
+import { Activity, AlertTriangle, CheckCircle2, IndianRupee, Loader2, PackageSearch, XCircle } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { StatCard } from '@/components/ui/StatCard';
@@ -10,42 +10,81 @@ import { SearchInput, Select } from '@/components/ui/Input';
 import { Tabs, type TabItem } from '@/components/ui/Tabs';
 import { Pagination } from '@/components/ui/Pagination';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { orders } from '@/data/orders';
-import { ORDER_STATUS_META, type OrderStatus } from '@/types';
+import { Button } from '@/components/ui/Button';
+import { ORDER_STATUS_META, type Order, type OrderStatus } from '@/types';
 import { formatCurrency, timeAgo } from '@/lib/format';
+import { api, fetchAllPaginated } from '@/lib/api';
+import { mapOrder, type ApiCustomer, type ApiDriver, type ApiOrder, type ApiVendor, errorMessage } from '@/lib/adminOrders';
 
 const STATUS_ORDER: OrderStatus[] = [
-  'new', 'preparing', 'quality-check', 'packing', 'ready-for-dispatch', 'dispatched', 'completed', 'cancelled', 'failed',
+  'placed', 'accepted', 'preparing', 'ready_for_pickup', 'out_for_delivery', 'delivered', 'cancelled', 'rejected',
 ];
 
-const TERMINAL_STATUSES: OrderStatus[] = ['completed', 'cancelled', 'failed'];
+const TERMINAL_STATUSES: OrderStatus[] = ['delivered', 'cancelled', 'rejected'];
 
 const PAGE_SIZE = 15;
 
 export function Orders() {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
   const [statusFilter, setStatusFilter] = useState<'all' | OrderStatus>('all');
   const [search, setSearch] = useState('');
   const [cityFilter, setCityFilter] = useState('all');
   const [page, setPage] = useState(1);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const [apiOrders, customers, vendors] = await Promise.all([
+          fetchAllPaginated<ApiOrder>('/admin/orders'),
+          api.get<ApiCustomer[]>('/admin/customers'),
+          api.get<ApiVendor[]>('/admin/vendors'),
+        ]);
+        const driverIds = Array.from(new Set(apiOrders.map((o) => o.driverId).filter(Boolean))) as string[];
+        const drivers = driverIds.length ? await api.get<ApiDriver[]>('/admin/drivers') : [];
+        if (cancelled) return;
+
+        const customerById = new Map(customers.map((c) => [c.id, c]));
+        const vendorById = new Map(vendors.map((v) => [v.id, v]));
+        const driverById = new Map(drivers.map((d) => [d.id, d]));
+
+        setOrders(apiOrders.map((o) => mapOrder(o, customerById, vendorById, driverById)));
+      } catch (err) {
+        if (!cancelled) setLoadError(errorMessage(err, 'Failed to load orders'));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
+
   const cities = useMemo(
-    () => Array.from(new Set(orders.map((o) => o.city))).sort((a, b) => a.localeCompare(b)),
-    [],
+    () => Array.from(new Set(orders.map((o) => o.city).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+    [orders],
   );
 
   const stats = useMemo(() => {
     const active = orders.filter((o) => !TERMINAL_STATUSES.includes(o.status)).length;
-    const completed = orders.filter((o) => o.status === 'completed').length;
-    const cancelledFailed = orders.filter((o) => o.status === 'cancelled' || o.status === 'failed').length;
+    const completed = orders.filter((o) => o.status === 'delivered').length;
+    const cancelledFailed = orders.filter((o) => o.status === 'cancelled' || o.status === 'rejected').length;
     const totalValue = orders.reduce((sum, o) => sum + o.total, 0);
     return { active, completed, cancelledFailed, totalValue };
-  }, []);
+  }, [orders]);
 
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const o of orders) counts[o.status] = (counts[o.status] ?? 0) + 1;
     return counts;
-  }, []);
+  }, [orders]);
 
   const tabItems: TabItem[] = useMemo(
     () => [
@@ -56,7 +95,7 @@ export function Orders() {
         count: statusCounts[status] ?? 0,
       })),
     ],
-    [statusCounts],
+    [orders.length, statusCounts],
   );
 
   const filtered = useMemo(() => {
@@ -70,7 +109,7 @@ export function Orders() {
       }
       return true;
     });
-  }, [statusFilter, cityFilter, search]);
+  }, [orders, statusFilter, cityFilter, search]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
@@ -114,7 +153,7 @@ export function Orders() {
           iconSurface="var(--color-brand-50)"
         />
         <StatCard
-          label="Cancelled / failed"
+          label="Cancelled / rejected"
           value={stats.cancelledFailed}
           icon={<XCircle size={18} />}
           iconColor="#E11D48"
@@ -151,7 +190,16 @@ export function Orders() {
           </Select>
         </div>
 
-        {pageOrders.length === 0 ? (
+        {loading ? (
+          <EmptyState icon={<Loader2 size={24} className="animate-spin" />} title="Loading orders…" />
+        ) : loadError ? (
+          <EmptyState
+            icon={<AlertTriangle size={24} />}
+            title="Couldn't load orders"
+            description={loadError}
+            action={<Button onClick={() => setReloadKey((k) => k + 1)}>Retry</Button>}
+          />
+        ) : pageOrders.length === 0 ? (
           <EmptyState
             icon={<PackageSearch size={24} />}
             title="No orders found"
@@ -177,7 +225,7 @@ export function Orders() {
                   <Tr key={order.id}>
                     <Td>
                       <Link to={`/orders/${order.id}`} className="font-semibold text-ink-800 hover:text-brand-700">
-                        {order.id}
+                        {order.orderNumber ?? order.id}
                       </Link>
                     </Td>
                     <Td>

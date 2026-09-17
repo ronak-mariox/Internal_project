@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { AddProductHeader, Button, ScreenContainer } from '../../components';
 import { Icon } from '../../icons/Icon';
-import { CATEGORIES } from '../../data/categories';
+import { useProductCatalog } from '../../context/ProductCatalogContext';
 import { useProductDraft } from '../../context/ProductDraftContext';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
@@ -12,6 +12,7 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'ProductCategoryStep'>;
 
 export function ProductCategoryStepScreen({ navigation }: Props) {
   const { draft } = useProductDraft();
+  const { categories, loading } = useProductCatalog();
   const [selectedId, setSelectedId] = useState(draft.category?.categoryId ?? '');
 
   function handleContinue() {
@@ -19,7 +20,7 @@ export function ProductCategoryStepScreen({ navigation }: Props) {
     navigation.navigate('ProductSubcategoryStep', { categoryId: selectedId });
   }
 
-  const selectedCategory = CATEGORIES.find(category => category.id === draft.category?.categoryId);
+  const selectedCategory = categories.find(category => category.id === draft.category?.categoryId);
 
   return (
     <ScreenContainer backgroundColor={colors.surface}>
@@ -45,32 +46,36 @@ export function ProductCategoryStepScreen({ navigation }: Props) {
           </View>
         ) : null}
 
-        <View style={styles.card}>
-          {CATEGORIES.map((category, index) => {
-            const selected = category.id === selectedId;
-            return (
-              <Pressable
-                key={category.id}
-                style={[
-                  styles.row,
-                  selected && styles.rowSelected,
-                  index === CATEGORIES.length - 1 && styles.rowLast,
-                ]}
-                onPress={() => setSelectedId(category.id)}
-              >
-                <View style={[styles.iconWrapper, selected && styles.iconWrapperSelected]}>
-                  <Icon name={category.icon} size={22} color={selected ? colors.primary : colors.textSecondary} />
-                </View>
-                <Text style={[styles.rowLabel, selected && styles.rowLabelSelected]}>{category.name}</Text>
-                {selected ? (
-                  <Icon name="check" size={16} color={colors.primary} strokeWidth={3} />
-                ) : (
-                  <Icon name="chevron-right" size={14} color={colors.textTertiary} />
-                )}
-              </Pressable>
-            );
-          })}
-        </View>
+        {loading ? (
+          <ActivityIndicator size="large" color={colors.primary} style={styles.loading} />
+        ) : (
+          <View style={styles.card}>
+            {categories.map((category, index) => {
+              const selected = category.id === selectedId;
+              return (
+                <Pressable
+                  key={category.id}
+                  style={[
+                    styles.row,
+                    selected && styles.rowSelected,
+                    index === categories.length - 1 && styles.rowLast,
+                  ]}
+                  onPress={() => setSelectedId(category.id)}
+                >
+                  <View style={[styles.iconWrapper, selected && styles.iconWrapperSelected]}>
+                    <Icon name="package" size={22} color={selected ? colors.primary : colors.textSecondary} />
+                  </View>
+                  <Text style={[styles.rowLabel, selected && styles.rowLabelSelected]}>{category.name}</Text>
+                  {selected ? (
+                    <Icon name="check" size={16} color={colors.primary} strokeWidth={3} />
+                  ) : (
+                    <Icon name="chevron-right" size={14} color={colors.textTertiary} />
+                  )}
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
       </ScrollView>
       <View style={styles.footer}>
         <Button label="Continue" onPress={handleContinue} disabled={!selectedId} />
@@ -113,6 +118,9 @@ const styles = StyleSheet.create({
   changeText: {
     ...typography.tiny,
     color: colors.primary,
+  },
+  loading: {
+    paddingVertical: spacing.xxl,
   },
   card: {
     backgroundColor: colors.white,

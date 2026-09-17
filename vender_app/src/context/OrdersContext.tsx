@@ -1,6 +1,8 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { colors } from '../theme';
 import { IconName } from '../icons/Icon';
+import { api } from '../services/api';
+import { formatTimeAgo } from '../utils/time';
 
 export type OrderStatus =
   | 'new'
@@ -75,371 +77,325 @@ export const ORDER_STATUS_META: Record<OrderStatus, OrderStatusMeta> = {
   failed: { label: 'Failed', color: '#374151', background: '#F3F4F6', icon: 'alert-circle' },
 };
 
-const CATALOG_NAMES = [
-  'Tata Salt (500g)',
-  'Amul Full Cream Milk (500ml)',
-  'Fortune Sunflower Oil (1L)',
-  'Maggi Masala Noodles (70g)',
-  'Britannia Bread (400g)',
-  'Surf Excel Detergent (1kg)',
-  'Colgate Toothpaste (200g)',
-  'Parle-G Biscuits (200g)',
-  "Lay's Classic Salted (52g)",
-  'Amul Butter (100g)',
-];
+// ---------------------------------------------------------------------------
+// Backend (API) shapes
+// ---------------------------------------------------------------------------
 
-function synthesizeProducts(itemsCount: number, subtotal: number): OrderProduct[] {
-  const base = Math.floor(subtotal / itemsCount);
-  const remainder = subtotal - base * itemsCount;
-  return Array.from({ length: itemsCount }).map((_, index) => ({
-    name: CATALOG_NAMES[index % CATALOG_NAMES.length],
-    price: index === 0 ? base + remainder : base,
-    qty: 1,
-  }));
-}
+type ApiOrderStatus =
+  | 'placed'
+  | 'accepted'
+  | 'preparing'
+  | 'ready_for_pickup'
+  | 'out_for_delivery'
+  | 'delivered'
+  | 'cancelled'
+  | 'rejected';
 
-const DELIVERY_CHARGE = 30;
-
-function seedOrders(): Order[] {
-  return [
-    {
-      id: 'ORD-8821',
-      customerName: 'Rajesh Kumar',
-      customerPhone: '+91 98765 43210',
-      itemsCount: 4,
-      location: 'Sector 5, Noida',
-      addressLine1: '42, Shastri Nagar, Sector 5',
-      addressLine2: 'Noida, Uttar Pradesh 201301',
-      timeLabel: '10:34 AM',
-      amount: 428,
-      deliveryCharge: DELIVERY_CHARGE,
-      paymentMethod: 'Paid via UPI · Razorpay',
-      status: 'new',
-      products: [
-        { name: 'Tata Salt (500g)', price: 20, qty: 2 },
-        { name: 'Amul Full Cream Milk (500ml)', price: 58, qty: 3 },
-        { name: 'Fortune Sunflower Oil (1L)', price: 132, qty: 1 },
-        { name: 'Maggi Masala Noodles (70g)', price: 13, qty: 4 },
-      ],
-      specialInstructions:
-        'Please pack the oil bottle carefully with extra wrap. Call before delivery — gate code is 4512.',
-      statusHistory: [{ status: 'new', time: '10:34 AM' }],
-      distanceLabel: '2.4 km away',
-      loyaltyLabel: '🏆 Regular',
-    },
-    {
-      id: 'ORD-8820',
-      customerName: 'Priya Singh',
-      customerPhone: '+91 98123 45678',
-      itemsCount: 2,
-      location: 'Rohini, Delhi',
-      addressLine1: '18, Pocket C, Rohini Sector 7',
-      addressLine2: 'Delhi 110085',
-      timeLabel: '9:58 AM',
-      amount: 156,
-      deliveryCharge: DELIVERY_CHARGE,
-      paymentMethod: 'Paid via UPI · Razorpay',
-      status: 'preparing',
-      products: synthesizeProducts(2, 156 - DELIVERY_CHARGE),
-      statusHistory: [
-        { status: 'new', time: '9:40 AM' },
-        { status: 'preparing', time: '9:58 AM' },
-      ],
-    },
-    {
-      id: 'ORD-8819',
-      customerName: 'Amit Sharma',
-      customerPhone: '+91 97001 22334',
-      itemsCount: 6,
-      location: 'Dwarka, Delhi',
-      addressLine1: 'B-204, Sector 12, Dwarka',
-      addressLine2: 'Delhi 110078',
-      timeLabel: '9:22 AM',
-      amount: 892,
-      deliveryCharge: DELIVERY_CHARGE,
-      paymentMethod: 'Paid via UPI · Razorpay',
-      status: 'quality-check',
-      products: synthesizeProducts(6, 892 - DELIVERY_CHARGE),
-      statusHistory: [
-        { status: 'new', time: '8:58 AM' },
-        { status: 'preparing', time: '9:05 AM' },
-        { status: 'quality-check', time: '9:22 AM' },
-      ],
-    },
-    {
-      id: 'ORD-8818',
-      customerName: 'Sunita Rao',
-      customerPhone: '+91 96543 21098',
-      itemsCount: 3,
-      location: 'Saket, Delhi',
-      addressLine1: 'C-45, Saket',
-      addressLine2: 'Delhi 110017',
-      timeLabel: '8:45 AM',
-      amount: 234,
-      deliveryCharge: DELIVERY_CHARGE,
-      paymentMethod: 'Paid via UPI · Razorpay',
-      status: 'packing',
-      products: synthesizeProducts(3, 234 - DELIVERY_CHARGE),
-      statusHistory: [
-        { status: 'new', time: '8:22 AM' },
-        { status: 'preparing', time: '8:30 AM' },
-        { status: 'quality-check', time: '8:38 AM' },
-        { status: 'packing', time: '8:45 AM' },
-      ],
-    },
-    {
-      id: 'ORD-8817',
-      customerName: 'Vikram Mehta',
-      customerPhone: '+91 95432 10987',
-      itemsCount: 5,
-      location: 'Vasant Kunj, Delhi',
-      addressLine1: 'D-12, Vasant Kunj',
-      addressLine2: 'Delhi 110070',
-      timeLabel: '8:10 AM',
-      amount: 578,
-      deliveryCharge: DELIVERY_CHARGE,
-      paymentMethod: 'Paid via UPI · Razorpay',
-      status: 'ready-for-dispatch',
-      products: synthesizeProducts(5, 578 - DELIVERY_CHARGE),
-      statusHistory: [
-        { status: 'new', time: '7:44 AM' },
-        { status: 'preparing', time: '7:52 AM' },
-        { status: 'quality-check', time: '8:00 AM' },
-        { status: 'packing', time: '8:06 AM' },
-        { status: 'ready-for-dispatch', time: '8:10 AM' },
-      ],
-    },
-    {
-      id: 'ORD-8816',
-      customerName: 'Deepa Nair',
-      customerPhone: '+91 94321 09876',
-      itemsCount: 2,
-      location: 'Hauz Khas, Delhi',
-      addressLine1: '7, Hauz Khas Village',
-      addressLine2: 'Delhi 110016',
-      timeLabel: 'Yesterday',
-      amount: 324,
-      deliveryCharge: DELIVERY_CHARGE,
-      paymentMethod: 'Paid via UPI · Razorpay',
-      status: 'dispatched',
-      products: synthesizeProducts(2, 324 - DELIVERY_CHARGE),
-      deliveryPartner: { name: 'Raju', vehicle: 'Hero Splendor', plate: 'DL 4C AR 2211' },
-      statusHistory: [
-        { status: 'new', time: 'Yesterday, 6:10 PM' },
-        { status: 'preparing', time: 'Yesterday, 6:18 PM' },
-        { status: 'quality-check', time: 'Yesterday, 6:24 PM' },
-        { status: 'packing', time: 'Yesterday, 6:30 PM' },
-        { status: 'ready-for-dispatch', time: 'Yesterday, 6:36 PM' },
-        { status: 'dispatched', time: 'Yesterday, 6:42 PM' },
-      ],
-    },
-    {
-      id: 'ORD-8815',
-      customerName: 'Rahul Gupta',
-      customerPhone: '+91 93210 98765',
-      itemsCount: 1,
-      location: 'Lajpat Nagar, Delhi',
-      addressLine1: '22, Lajpat Nagar II',
-      addressLine2: 'Delhi 110024',
-      timeLabel: 'Yesterday',
-      amount: 196,
-      deliveryCharge: DELIVERY_CHARGE,
-      paymentMethod: 'Paid via UPI · Razorpay',
-      status: 'completed',
-      products: synthesizeProducts(1, 196 - DELIVERY_CHARGE),
-      rating: 4.7,
-      review: 'Excellent service!',
-      statusHistory: [
-        { status: 'new', time: 'Yesterday, 4:02 PM' },
-        { status: 'preparing', time: 'Yesterday, 4:08 PM' },
-        { status: 'quality-check', time: 'Yesterday, 4:14 PM' },
-        { status: 'packing', time: 'Yesterday, 4:18 PM' },
-        { status: 'ready-for-dispatch', time: 'Yesterday, 4:22 PM' },
-        { status: 'dispatched', time: 'Yesterday, 4:28 PM' },
-        { status: 'completed', time: 'Yesterday, 4:52 PM' },
-      ],
-    },
-    {
-      id: 'ORD-8814',
-      customerName: 'Anita Singh',
-      customerPhone: '+91 92109 87654',
-      itemsCount: 3,
-      location: 'Karol Bagh, Delhi',
-      addressLine1: '9, Karol Bagh Market',
-      addressLine2: 'Delhi 110005',
-      timeLabel: 'Yesterday',
-      amount: 445,
-      deliveryCharge: DELIVERY_CHARGE,
-      paymentMethod: 'Paid via UPI · Razorpay',
-      status: 'cancelled',
-      products: synthesizeProducts(3, 445 - DELIVERY_CHARGE),
-      cancelReason: 'Ordered by mistake',
-      cancelledBy: 'customer',
-      statusHistory: [
-        { status: 'new', time: 'Yesterday, 2:10 PM' },
-        { status: 'cancelled', time: 'Yesterday, 2:16 PM' },
-      ],
-    },
-    {
-      id: 'ORD-8813',
-      customerName: 'Kiran Patel',
-      customerPhone: '+91 91098 76543',
-      itemsCount: 2,
-      location: 'Pitampura, Delhi',
-      addressLine1: '55, Pitampura',
-      addressLine2: 'Delhi 110034',
-      timeLabel: '2 days ago',
-      amount: 278,
-      deliveryCharge: DELIVERY_CHARGE,
-      paymentMethod: 'Paid via UPI · Razorpay',
-      status: 'failed',
-      products: synthesizeProducts(2, 278 - DELIVERY_CHARGE),
-      failReason: 'Payment gateway timeout',
-      statusHistory: [
-        { status: 'new', time: '2 days ago, 11:04 AM' },
-        { status: 'failed', time: '2 days ago, 11:09 AM' },
-      ],
-    },
-  ];
-}
-
-function nowLabel() {
-  return new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
-}
-
-type OrdersContextValue = {
-  orders: Order[];
-  getOrder: (orderId: string) => Order | undefined;
-  ordersByStatus: (statuses: OrderStatus[]) => Order[];
-  acceptOrder: (orderId: string) => void;
-  acceptAllNew: () => void;
-  rejectOrder: (orderId: string, reason?: string) => void;
-  cancelAcceptedOrder: (orderId: string, reason: string) => void;
-  startQualityCheck: (orderId: string) => void;
-  passQualityCheck: (orderId: string) => void;
-  failQualityCheck: (orderId: string) => void;
-  markPacked: (orderId: string) => void;
-  handoverToPartner: (orderId: string) => void;
-  replaceOrderItem: (orderId: string, targetName: string, replacement: OrderProduct) => void;
-  removeOrderItem: (orderId: string, targetName: string) => void;
-  completeOrder: (orderId: string, outcome?: { rating?: number; review?: string }) => void;
-  assignDeliveryPartner: (orderId: string, partner: DeliveryPartner) => void;
+type ApiOrderItem = {
+  productId: string;
+  variantId: string;
+  name: string;
+  variantLabel: string;
+  imageUrl?: string;
+  price: number;
+  mrp: number;
+  quantity: number;
+  subtotal: number;
 };
 
-function recalcTotals(products: OrderProduct[], deliveryCharge: number) {
-  const subtotal = products.reduce((sum, product) => sum + product.price * product.qty, 0);
-  const itemsCount = products.reduce((sum, product) => sum + product.qty, 0);
-  return { amount: subtotal + deliveryCharge, itemsCount };
+type ApiOrderAddress = {
+  contactName?: string;
+  contactPhone?: string;
+  line1: string;
+  line2?: string;
+  landmark?: string;
+  city: string;
+  state: string;
+  pincode: string;
+};
+
+type ApiOrderPricing = {
+  itemsTotal: number;
+  taxTotal: number;
+  deliveryFee: number;
+  platformFee: number;
+  discount: number;
+  grandTotal: number;
+};
+
+type ApiOrder = {
+  id: string;
+  orderNumber: string;
+  customerName: string;
+  customerPhone?: string;
+  items: ApiOrderItem[];
+  address: ApiOrderAddress;
+  pricing: ApiOrderPricing;
+  couponCode?: string;
+  paymentMethod: 'cod' | 'online';
+  paymentStatus: 'pending' | 'paid' | 'failed' | 'refunded';
+  status: ApiOrderStatus;
+  statusHistory: { status: ApiOrderStatus; at: string; note?: string }[];
+  specialInstructions?: string;
+  cancelReason?: string;
+  cancelledBy?: 'customer' | 'vendor' | 'admin';
+  placedAt: string;
+  deliveredAt?: string;
+  createdAt: string;
+};
+
+/**
+ * Local-only extras that have no backend representation in this pass: the interim
+ * "Quality Check" UI step (no backend call happens for it — see `startQualityCheck`),
+ * a post-delivery rating/review, and an item-substitution overlay for the (rare) replace/remove
+ * item flow. None of this survives a refresh from the server; it's an in-memory convenience
+ * layered on top of the real order data.
+ */
+type OrderOverlay = {
+  qualityCheckStarted?: boolean;
+  productsOverride?: OrderProduct[];
+  rating?: number;
+  review?: string;
+};
+
+function mapHistoryStatus(status: ApiOrderStatus): OrderStatus {
+  switch (status) {
+    case 'placed':
+      return 'new';
+    case 'accepted':
+      return 'preparing';
+    case 'preparing':
+      return 'packing';
+    case 'ready_for_pickup':
+      return 'ready-for-dispatch';
+    case 'out_for_delivery':
+      return 'dispatched';
+    case 'delivered':
+      return 'completed';
+    case 'rejected':
+      return 'cancelled';
+    case 'cancelled':
+      return 'cancelled';
+    default:
+      return 'new';
+  }
 }
 
-const OrdersContext = createContext<OrdersContextValue | null>(null);
+function isFailedQualityCheck(order: ApiOrder): boolean {
+  if (order.status !== 'cancelled') return false;
+  const note = order.cancelReason ?? order.statusHistory[order.statusHistory.length - 1]?.note ?? '';
+  return /quality check/i.test(note);
+}
 
-function advance(order: Order, status: OrderStatus, extra?: Partial<Order>): Order {
+function deriveStatus(order: ApiOrder, overlay?: OrderOverlay): OrderStatus {
+  if (order.status === 'accepted' && overlay?.qualityCheckStarted) return 'quality-check';
+  if (order.status === 'cancelled' && isFailedQualityCheck(order)) return 'failed';
+  return mapHistoryStatus(order.status);
+}
+
+function formatApiTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+}
+
+function buildHistory(order: ApiOrder, overlay?: OrderOverlay): OrderStatusEvent[] {
+  const merged: OrderStatusEvent[] = [];
+  for (const entry of order.statusHistory) {
+    merged.push({ status: mapHistoryStatus(entry.status), time: formatApiTime(entry.at) });
+    if (entry.status === 'accepted' && overlay?.qualityCheckStarted) {
+      merged.push({ status: 'quality-check', time: formatApiTime(entry.at) });
+    }
+  }
+  return merged;
+}
+
+function mapCancelledBy(value: ApiOrder['cancelledBy']): 'customer' | 'vendor' | undefined {
+  if (value === 'customer') return 'customer';
+  if (value === 'vendor' || value === 'admin') return 'vendor';
+  return undefined;
+}
+
+function mapOrder(apiOrder: ApiOrder, overlay?: OrderOverlay): Order {
+  const products = overlay?.productsOverride ?? apiOrder.items.map(item => ({
+    name: item.name,
+    price: item.price,
+    qty: item.quantity,
+  }));
+  const itemsCount = products.reduce((sum, item) => sum + item.qty, 0);
+  const amount = overlay?.productsOverride
+    ? products.reduce((sum, item) => sum + item.price * item.qty, 0) + apiOrder.pricing.deliveryFee
+    : apiOrder.pricing.grandTotal;
+
+  const addressParts = [apiOrder.address.line2, apiOrder.address.city, apiOrder.address.state, apiOrder.address.pincode]
+    .map(part => part?.trim())
+    .filter((part): part is string => !!part);
+
+  const status = deriveStatus(apiOrder, overlay);
+  const failed = status === 'failed';
+
   return {
-    ...order,
-    ...extra,
+    id: apiOrder.orderNumber,
+    customerName: apiOrder.customerName,
+    customerPhone: apiOrder.customerPhone ?? '',
+    itemsCount,
+    location: apiOrder.address.city,
+    addressLine1: apiOrder.address.line1,
+    addressLine2: addressParts.join(', '),
+    timeLabel: formatTimeAgo(new Date(apiOrder.placedAt).getTime()),
+    amount,
+    deliveryCharge: apiOrder.pricing.deliveryFee,
+    paymentMethod: apiOrder.paymentMethod === 'cod' ? 'Cash on Delivery' : 'Paid Online',
     status,
-    statusHistory: [...order.statusHistory, { status, time: nowLabel() }],
+    products,
+    specialInstructions: apiOrder.specialInstructions,
+    // There's no real driver-assignment system wired up server-side yet, so we never fabricate
+    // a delivery partner — screens that need one show a "will be assigned shortly" placeholder.
+    deliveryPartner: undefined,
+    cancelReason: !failed ? apiOrder.cancelReason : undefined,
+    failReason: failed ? apiOrder.cancelReason ?? 'Failed quality check' : undefined,
+    rating: overlay?.rating,
+    review: overlay?.review,
+    statusHistory: buildHistory(apiOrder, overlay),
+    cancelledBy: mapCancelledBy(apiOrder.cancelledBy),
   };
 }
 
-export function OrdersProvider({ children }: { children: React.ReactNode }) {
-  const [orders, setOrders] = useState<Order[]>(seedOrders);
+type CompleteOutcome = { rating?: number; review?: string };
 
-  const updateOrder = useCallback((orderId: string, updater: (order: Order) => Order) => {
-    setOrders(prev => prev.map(order => (order.id === orderId ? updater(order) : order)));
+type OrdersContextValue = {
+  orders: Order[];
+  loading: boolean;
+  refreshOrders: () => Promise<void>;
+  getOrder: (orderId: string) => Order | undefined;
+  ordersByStatus: (statuses: OrderStatus[]) => Order[];
+  acceptOrder: (orderId: string) => Promise<void>;
+  acceptAllNew: () => Promise<void>;
+  rejectOrder: (orderId: string, reason?: string) => Promise<void>;
+  cancelAcceptedOrder: (orderId: string, reason: string) => Promise<void>;
+  startQualityCheck: (orderId: string) => void;
+  passQualityCheck: (orderId: string) => Promise<void>;
+  failQualityCheck: (orderId: string) => Promise<void>;
+  markPacked: (orderId: string) => Promise<void>;
+  handoverToPartner: (orderId: string) => Promise<void>;
+  replaceOrderItem: (orderId: string, targetName: string, replacement: OrderProduct) => void;
+  removeOrderItem: (orderId: string, targetName: string) => void;
+  completeOrder: (orderId: string, outcome?: CompleteOutcome) => Promise<void>;
+};
+
+const OrdersContext = createContext<OrdersContextValue | null>(null);
+
+export function OrdersProvider({ children }: { children: React.ReactNode }) {
+  const [rawOrders, setRawOrders] = useState<ApiOrder[]>([]);
+  const [overlays, setOverlays] = useState<Record<string, OrderOverlay>>({});
+  const [loading, setLoading] = useState(true);
+
+  const loadOrders = useCallback(async () => {
+    const { data } = await api.get<ApiOrder[]>('/vendor/orders');
+    setRawOrders(data);
   }, []);
 
-  const acceptOrder = useCallback(
-    (orderId: string) => updateOrder(orderId, order => advance(order, 'preparing')),
-    [updateOrder],
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    loadOrders()
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [loadOrders]);
+
+  const refreshOrders = useCallback(async () => {
+    await loadOrders();
+  }, [loadOrders]);
+
+  const orders = useMemo(
+    () => rawOrders.map(item => mapOrder(item, overlays[item.orderNumber])),
+    [rawOrders, overlays],
   );
 
-  const acceptAllNew = useCallback(() => {
-    setOrders(prev => prev.map(order => (order.status === 'new' ? advance(order, 'preparing') : order)));
-  }, []);
+  const findRaw = useCallback((orderId: string) => rawOrders.find(item => item.orderNumber === orderId), [rawOrders]);
+
+  const setStatus = useCallback(
+    async (orderId: string, status: ApiOrderStatus, note?: string) => {
+      const raw = findRaw(orderId);
+      if (!raw) return;
+      const { data } = await api.patch<ApiOrder>(`/vendor/orders/${raw.id}/status`, { status, note });
+      setRawOrders(prev => prev.map(item => (item.id === data.id ? data : item)));
+    },
+    [findRaw],
+  );
+
+  const acceptOrder = useCallback((orderId: string) => setStatus(orderId, 'accepted'), [setStatus]);
+
+  const acceptAllNew = useCallback(async () => {
+    const newOrderIds = rawOrders.filter(item => item.status === 'placed').map(item => item.orderNumber);
+    for (const id of newOrderIds) {
+      // eslint-disable-next-line no-await-in-loop
+      await setStatus(id, 'accepted');
+    }
+  }, [rawOrders, setStatus]);
 
   const rejectOrder = useCallback(
-    (orderId: string, reason = 'Rejected by vendor') =>
-      updateOrder(orderId, order =>
-        advance(order, 'cancelled', { cancelReason: reason, cancelledBy: 'vendor' }),
-      ),
-    [updateOrder],
+    (orderId: string, reason = 'Rejected by vendor') => setStatus(orderId, 'rejected', reason),
+    [setStatus],
   );
 
   const cancelAcceptedOrder = useCallback(
-    (orderId: string, reason: string) =>
-      updateOrder(orderId, order =>
-        advance(order, 'cancelled', { cancelReason: reason, cancelledBy: 'vendor' }),
-      ),
-    [updateOrder],
+    (orderId: string, reason: string) => setStatus(orderId, 'cancelled', reason),
+    [setStatus],
   );
 
-  const startQualityCheck = useCallback(
-    (orderId: string) => updateOrder(orderId, order => advance(order, 'quality-check')),
-    [updateOrder],
-  );
+  const startQualityCheck = useCallback((orderId: string) => {
+    // Local-only UI sub-step — the backend has no separate "quality check" state, so there's
+    // nothing to persist here. This just flips a client-side overlay flag so the order shows
+    // the Quality Check screen until `passQualityCheck`/`failQualityCheck` call the real API.
+    setOverlays(prev => ({ ...prev, [orderId]: { ...prev[orderId], qualityCheckStarted: true } }));
+  }, []);
 
-  const passQualityCheck = useCallback(
-    (orderId: string) => updateOrder(orderId, order => advance(order, 'packing')),
-    [updateOrder],
-  );
+  const passQualityCheck = useCallback((orderId: string) => setStatus(orderId, 'preparing'), [setStatus]);
 
   const failQualityCheck = useCallback(
-    (orderId: string) =>
-      updateOrder(orderId, order => advance(order, 'failed', { failReason: 'Failed quality check' })),
-    [updateOrder],
+    (orderId: string) => setStatus(orderId, 'cancelled', 'Failed quality check'),
+    [setStatus],
   );
 
-  const markPacked = useCallback(
-    (orderId: string) => updateOrder(orderId, order => advance(order, 'ready-for-dispatch')),
-    [updateOrder],
-  );
+  const markPacked = useCallback((orderId: string) => setStatus(orderId, 'ready_for_pickup'), [setStatus]);
 
-  const handoverToPartner = useCallback(
-    (orderId: string) =>
-      updateOrder(orderId, order =>
-        advance(order, 'dispatched', {
-          deliveryPartner: order.deliveryPartner ?? {
-            name: 'Raju',
-            vehicle: 'Hero Splendor',
-            plate: 'DL 4C AR 2211',
-          },
-        }),
-      ),
-    [updateOrder],
+  const handoverToPartner = useCallback((orderId: string) => setStatus(orderId, 'out_for_delivery'), [setStatus]);
+
+  const completeOrder = useCallback(
+    async (orderId: string, outcome?: CompleteOutcome) => {
+      await setStatus(orderId, 'delivered');
+      if (outcome?.rating !== undefined || outcome?.review !== undefined) {
+        setOverlays(prev => ({
+          ...prev,
+          [orderId]: { ...prev[orderId], rating: outcome?.rating, review: outcome?.review },
+        }));
+      }
+    },
+    [setStatus],
   );
 
   const replaceOrderItem = useCallback(
-    (orderId: string, targetName: string, replacement: OrderProduct) =>
-      updateOrder(orderId, order => {
-        const products = order.products.map(product => (product.name === targetName ? replacement : product));
-        return { ...order, products, ...recalcTotals(products, order.deliveryCharge) };
-      }),
-    [updateOrder],
+    (orderId: string, targetName: string, replacement: OrderProduct) => {
+      const current = orders.find(item => item.id === orderId);
+      if (!current) return;
+      const nextProducts = current.products.map(item => (item.name === targetName ? replacement : item));
+      setOverlays(prev => ({ ...prev, [orderId]: { ...prev[orderId], productsOverride: nextProducts } }));
+    },
+    [orders],
   );
 
   const removeOrderItem = useCallback(
-    (orderId: string, targetName: string) =>
-      updateOrder(orderId, order => {
-        const products = order.products.filter(product => product.name !== targetName);
-        return { ...order, products, ...recalcTotals(products, order.deliveryCharge) };
-      }),
-    [updateOrder],
-  );
-
-  const completeOrder = useCallback(
-    (orderId: string, outcome?: { rating?: number; review?: string }) =>
-      updateOrder(orderId, order =>
-        advance(order, 'completed', { rating: outcome?.rating, review: outcome?.review }),
-      ),
-    [updateOrder],
-  );
-
-  const assignDeliveryPartner = useCallback(
-    (orderId: string, partner: DeliveryPartner) =>
-      updateOrder(orderId, order => ({ ...order, deliveryPartner: partner })),
-    [updateOrder],
+    (orderId: string, targetName: string) => {
+      const current = orders.find(item => item.id === orderId);
+      if (!current) return;
+      const nextProducts = current.products.filter(item => item.name !== targetName);
+      setOverlays(prev => ({ ...prev, [orderId]: { ...prev[orderId], productsOverride: nextProducts } }));
+    },
+    [orders],
   );
 
   const getOrder = useCallback((orderId: string) => orders.find(order => order.id === orderId), [orders]);
@@ -452,6 +408,8 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo(
     () => ({
       orders,
+      loading,
+      refreshOrders,
       getOrder,
       ordersByStatus,
       acceptOrder,
@@ -466,10 +424,11 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       replaceOrderItem,
       removeOrderItem,
       completeOrder,
-      assignDeliveryPartner,
     }),
     [
       orders,
+      loading,
+      refreshOrders,
       getOrder,
       ordersByStatus,
       acceptOrder,
@@ -484,7 +443,6 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       replaceOrderItem,
       removeOrderItem,
       completeOrder,
-      assignDeliveryPartner,
     ],
   );
 

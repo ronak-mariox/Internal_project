@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Plus, Tag, Pause, Play, Pencil, Calendar, Percent, ShoppingBag } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Plus, Tag, Pause, Play, Pencil, Calendar, Percent, ShoppingBag, Loader2, AlertTriangle } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -8,28 +8,31 @@ import { Tabs, type TabItem } from '@/components/ui/Tabs';
 import { Drawer } from '@/components/ui/Drawer';
 import { Field, Input, Label } from '@/components/ui/Input';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { offers as seedOffers } from '@/data/offers';
+import { InlineAlert } from '@/components/ui/InlineAlert';
 import type { Offer, OfferStatus } from '@/types';
 import { formatCurrency, formatDate } from '@/lib/format';
+import { api, ApiError } from '@/lib/api';
 
 const STATUS_TABS: { value: OfferStatus | 'all'; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'active', label: 'Active' },
-  { value: 'scheduled', label: 'Scheduled' },
   { value: 'paused', label: 'Paused' },
   { value: 'expired', label: 'Expired' },
 ];
 
+// Only 'percentage' and 'flat' are ever sent to / received from the backend —
+// coupons have no "free delivery" discount type server-side, so that option is
+// left out of the create/edit form rather than kept as a control that silently
+// does nothing when saved.
+type EditableOfferType = 'percentage' | 'flat';
+
 const EMPTY_FORM = {
-  title: '',
   description: '',
   code: '',
-  type: 'percentage' as Offer['type'],
+  type: 'percentage' as EditableOfferType,
   value: '',
   minOrderValue: '',
-  appliesTo: '',
-  startDate: '',
-  endDate: '',
+  expiresAt: '',
 };
 
 function valueLabel(offer: Offer) {
@@ -38,12 +41,96 @@ function valueLabel(offer: Offer) {
   return 'Free Delivery';
 }
 
+function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof ApiError ? err.message : fallback;
+}
+
+// ---------------------------------------------------------------------------
+// Backend shape (GET/POST/PATCH /admin/coupons)
+// ---------------------------------------------------------------------------
+
+interface ApiCoupon {
+  id: string;
+  code: string;
+  description?: string;
+  discountType: 'flat' | 'percent';
+  value: number;
+  minOrderValue: number;
+  maxDiscount?: number;
+  expiresAt?: string;
+  usageLimit?: number;
+  usedCount: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Maps a real coupon into the admin panel's local Offer shape:
+//  - title <- the coupon code (always present; the backend has no separate
+//    "title" field distinct from its optional description)
+//  - description <- the real description, or an honest placeholder if absent
+//  - appliesTo <- a fixed "All products" label (coupons are platform-wide
+//    server-side — there's no product/category scoping field to reflect here)
+//  - status <- derived from isActive + whether expiresAt has passed; the
+//    backend has no "scheduled" concept (no separate start date), so that
+//    status was dropped from OfferStatus entirely
+//  - startDate <- createdAt (the coupon is usable from creation)
+//  - endDate <- expiresAt, left undefined (never a fabricated date) when the
+//    coupon has no expiry
+function mapCoupon(c: ApiCoupon): Offer {
+  const expired = c.expiresAt ? new Date(c.expiresAt).getTime() < Date.now() : false;
+  const status: OfferStatus = expired ? 'expired' : c.isActive ? 'active' : 'paused';
+  return {
+    id: c.id,
+    title: c.code,
+    description: c.description ?? 'No description provided',
+    code: c.code,
+    type: c.discountType === 'percent' ? 'percentage' : 'flat',
+    value: c.value,
+    minOrderValue: c.minOrderValue,
+    appliesTo: 'All products',
+    usageCount: c.usedCount,
+    status,
+    startDate: c.createdAt,
+    endDate: c.expiresAt,
+  };
+}
+
 export function Offers() {
-  const [offerList, setOfferList] = useState<Offer[]>(seedOffers);
+  const [coupons, setCoupons] = useState<ApiCoupon[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
   const [statusTab, setStatusTab] = useState<OfferStatus | 'all'>('all');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+  const [drawerError, setDrawerError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const data = await api.get<ApiCoupon[]>('/admin/coupons');
+        if (!cancelled) setCoupons(data);
+      } catch (err) {
+        if (!cancelled) setLoadError(errorMessage(err, 'Failed to load offers'));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
+
+  const offerList = useMemo(() => coupons.map(mapCoupon), [coupons]);
 
   const tabItems: TabItem[] = STATUS_TABS.map((t) => ({
     value: t.value,
@@ -59,54 +146,66 @@ export function Offers() {
   function openCreate() {
     setEditingId(null);
     setForm(EMPTY_FORM);
+    setDrawerError(null);
     setDrawerOpen(true);
   }
 
   function openEdit(offer: Offer) {
     setEditingId(offer.id);
     setForm({
-      title: offer.title,
-      description: offer.description,
+      description: offer.description === 'No description provided' ? '' : offer.description,
       code: offer.code,
-      type: offer.type,
+      type: offer.type === 'percentage' ? 'percentage' : 'flat',
       value: String(offer.value),
       minOrderValue: String(offer.minOrderValue),
-      appliesTo: offer.appliesTo,
-      startDate: offer.startDate.slice(0, 10),
-      endDate: offer.endDate.slice(0, 10),
+      expiresAt: offer.endDate ? offer.endDate.slice(0, 10) : '',
     });
+    setDrawerError(null);
     setDrawerOpen(true);
   }
 
-  function toggleStatus(id: string) {
-    setOfferList((list) =>
-      list.map((o) => {
-        if (o.id !== id) return o;
-        if (o.status === 'active') return { ...o, status: 'paused' };
-        if (o.status === 'paused') return { ...o, status: 'active' };
-        return o;
-      }),
-    );
+  async function toggleStatus(offer: Offer) {
+    if (offer.status !== 'active' && offer.status !== 'paused') return;
+    setActionError(null);
+    try {
+      const updated = await api.patch<ApiCoupon>(`/admin/coupons/${offer.id}`, { isActive: offer.status !== 'active' });
+      setCoupons((prev) => prev.map((c) => (c.id === offer.id ? updated : c)));
+    } catch (err) {
+      setActionError(errorMessage(err, 'Failed to update offer status'));
+    }
   }
 
-  function handleSave() {
-    if (!form.title.trim() || !form.code.trim()) return;
-    const payload: Offer = {
-      id: editingId ?? `off-${Date.now()}`,
-      title: form.title,
-      description: form.description,
-      code: form.code.toUpperCase(),
-      type: form.type,
-      value: Number(form.value) || 0,
-      minOrderValue: Number(form.minOrderValue) || 0,
-      appliesTo: form.appliesTo || 'All categories',
-      usageCount: editingId ? (offerList.find((o) => o.id === editingId)?.usageCount ?? 0) : 0,
-      status: editingId ? (offerList.find((o) => o.id === editingId)?.status ?? 'scheduled') : 'scheduled',
-      startDate: form.startDate ? new Date(form.startDate).toISOString() : new Date().toISOString(),
-      endDate: form.endDate ? new Date(form.endDate).toISOString() : new Date().toISOString(),
-    };
-    setOfferList((list) => (editingId ? list.map((o) => (o.id === editingId ? payload : o)) : [payload, ...list]));
-    setDrawerOpen(false);
+  async function handleSave() {
+    if (!form.code.trim()) {
+      setDrawerError('Coupon code is required');
+      return;
+    }
+    setSaving(true);
+    setDrawerError(null);
+    try {
+      const payload = {
+        code: form.code.trim().toUpperCase(),
+        description: form.description.trim() || undefined,
+        discountType: form.type === 'percentage' ? ('percent' as const) : ('flat' as const),
+        value: Number(form.value) || 0,
+        minOrderValue: Number(form.minOrderValue) || 0,
+        expiresAt: form.expiresAt ? new Date(form.expiresAt).toISOString() : undefined,
+      };
+
+      let updated: ApiCoupon;
+      if (editingId) {
+        updated = await api.patch<ApiCoupon>(`/admin/coupons/${editingId}`, payload);
+      } else {
+        updated = await api.post<ApiCoupon>('/admin/coupons', payload);
+      }
+
+      setCoupons((prev) => (editingId ? prev.map((c) => (c.id === editingId ? updated : c)) : [updated, ...prev]));
+      setDrawerOpen(false);
+    } catch (err) {
+      setDrawerError(errorMessage(err, 'Failed to save offer'));
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -121,6 +220,8 @@ export function Offers() {
         }
       />
 
+      {actionError && <InlineAlert message={actionError} className="mb-4" />}
+
       <div className="mb-5">
         <Tabs
           items={tabItems}
@@ -129,7 +230,20 @@ export function Offers() {
         />
       </div>
 
-      {filtered.length === 0 ? (
+      {loading ? (
+        <Card>
+          <EmptyState icon={<Loader2 size={22} className="animate-spin" />} title="Loading offers…" />
+        </Card>
+      ) : loadError ? (
+        <Card>
+          <EmptyState
+            icon={<AlertTriangle size={22} />}
+            title="Couldn't load offers"
+            description={loadError}
+            action={<Button onClick={() => setReloadKey((k) => k + 1)}>Retry</Button>}
+          />
+        </Card>
+      ) : filtered.length === 0 ? (
         <Card>
           <EmptyState
             icon={<Tag size={24} />}
@@ -177,7 +291,7 @@ export function Offers() {
 
                 <div className="mt-auto flex items-center gap-1.5 border-t border-ink-100 pt-3 text-[12px] text-ink-500">
                   <Calendar size={13} />
-                  {formatDate(offer.startDate)} – {formatDate(offer.endDate)}
+                  {formatDate(offer.startDate)} – {offer.endDate ? formatDate(offer.endDate) : 'No expiry'}
                 </div>
 
                 <div className="flex items-center gap-2 pt-1">
@@ -186,7 +300,7 @@ export function Offers() {
                       size="sm"
                       variant="outline"
                       icon={offer.status === 'active' ? <Pause size={14} /> : <Play size={14} />}
-                      onClick={() => toggleStatus(offer.id)}
+                      onClick={() => toggleStatus(offer)}
                       className="flex-1"
                     >
                       {offer.status === 'active' ? 'Pause' : 'Resume'}
@@ -215,18 +329,19 @@ export function Offers() {
         subtitle={editingId ? 'Update the promotion details' : 'Set up a new coupon or promotional campaign'}
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setDrawerOpen(false)}>
+            <Button variant="outline" onClick={() => setDrawerOpen(false)} disabled={saving}>
               Cancel
             </Button>
-            <Button onClick={handleSave}>{editingId ? 'Save changes' : 'Create offer'}</Button>
+            <Button onClick={handleSave} disabled={!form.code.trim() || saving} loading={saving}>
+              {editingId ? 'Save changes' : 'Create offer'}
+            </Button>
           </div>
         }
       >
         <div className="space-y-4">
-          <Field label="Title">
-            <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Welcome Offer" />
-          </Field>
-          <Field label="Description">
+          {drawerError && <InlineAlert message={drawerError} />}
+
+          <Field label="Description" hint="Shown to customers as the offer summary">
             <Input
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
@@ -246,20 +361,18 @@ export function Offers() {
               <Label>Type</Label>
               <select
                 value={form.type}
-                onChange={(e) => setForm({ ...form, type: e.target.value as Offer['type'] })}
+                onChange={(e) => setForm({ ...form, type: e.target.value as EditableOfferType })}
                 className="h-10 w-full rounded-xl border border-ink-200 bg-white px-3 text-sm text-ink-700 outline-none transition-colors focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
               >
                 <option value="percentage">Percentage</option>
                 <option value="flat">Flat amount</option>
-                <option value="free-delivery">Free delivery</option>
               </select>
             </div>
-            <Field label="Value" hint={form.type === 'free-delivery' ? 'Not applicable' : form.type === 'percentage' ? 'In %' : 'In ₹'}>
+            <Field label="Value" hint={form.type === 'percentage' ? 'In %' : 'In ₹'}>
               <Input
                 type="number"
                 value={form.value}
                 onChange={(e) => setForm({ ...form, value: e.target.value })}
-                disabled={form.type === 'free-delivery'}
                 placeholder="25"
               />
             </Field>
@@ -272,21 +385,9 @@ export function Offers() {
               placeholder="199"
             />
           </Field>
-          <Field label="Applies to">
-            <Input
-              value={form.appliesTo}
-              onChange={(e) => setForm({ ...form, appliesTo: e.target.value })}
-              placeholder="All customers · all categories"
-            />
+          <Field label="Expiry date" hint="Leave blank for no expiry">
+            <Input type="date" value={form.expiresAt} onChange={(e) => setForm({ ...form, expiresAt: e.target.value })} />
           </Field>
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Start date">
-              <Input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} />
-            </Field>
-            <Field label="End date">
-              <Input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} />
-            </Field>
-          </div>
         </div>
       </Drawer>
     </div>

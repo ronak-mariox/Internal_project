@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { Icon } from '../../icons/Icon';
 import { useOrders } from '../../context/OrdersContext';
+import { getApiErrorMessage } from '../../services/api';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'RejectReason'>;
@@ -24,10 +25,19 @@ export function RejectReasonScreen({ navigation, route }: Props) {
   const { rejectOrder } = useOrders();
   const [selected, setSelected] = useState(REASONS[0].label);
   const [note, setNote] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  function handleConfirm() {
-    rejectOrder(orderId, selected);
-    navigation.replace('RejectOrderConfirmation', { orderId, reasonLabel: selected });
+  async function handleConfirm() {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await rejectOrder(orderId, selected);
+      navigation.replace('RejectOrderConfirmation', { orderId, reasonLabel: selected });
+    } catch (err) {
+      Alert.alert('Could not reject order', getApiErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -81,8 +91,12 @@ export function RejectReasonScreen({ navigation, route }: Props) {
       </ScrollView>
 
       <View style={styles.footer}>
-        <Pressable style={styles.confirmButton} onPress={handleConfirm}>
-          <Text style={styles.confirmButtonText}>Confirm Rejection</Text>
+        <Pressable
+          style={[styles.confirmButton, submitting && styles.confirmButtonDisabled]}
+          onPress={handleConfirm}
+          disabled={submitting}
+        >
+          <Text style={styles.confirmButtonText}>{submitting ? 'Rejecting…' : 'Confirm Rejection'}</Text>
         </Pressable>
       </View>
     </SafeAreaView>
@@ -225,6 +239,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.error,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  confirmButtonDisabled: {
+    opacity: 0.6,
   },
   confirmButtonText: {
     ...typography.button,

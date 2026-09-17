@@ -125,3 +125,47 @@ export const api = {
   patch: <T>(path: string, body?: unknown) => apiRequest<T>(path, { method: 'PATCH', body }),
   delete: <T>(path: string) => apiRequest<T>(path, { method: 'DELETE' }),
 };
+
+interface PaginatedResponse<T> {
+  items: T[];
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+/**
+ * A handful of admin list endpoints (products, orders) are server-paginated with a
+ * hard 100-per-page cap. Several admin panel pages still do their filtering/sorting/
+ * pagination entirely client-side against a full in-memory list (same shape the old
+ * mock data had), so this walks every page and concatenates the results instead of
+ * rewriting those pages around server-side pagination. Capped at `maxPages` as a
+ * safety valve for very large datasets.
+ */
+export async function fetchAllPaginated<T>(
+  path: string,
+  params: Record<string, string | undefined> = {},
+  opts: { limit?: number; maxPages?: number } = {},
+): Promise<T[]> {
+  const limit = opts.limit ?? 100;
+  const maxPages = opts.maxPages ?? 20;
+
+  const buildQuery = (page: number) => {
+    const qs = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value) qs.set(key, value);
+    }
+    qs.set('page', String(page));
+    qs.set('limit', String(limit));
+    return qs.toString();
+  };
+
+  const first = await api.get<PaginatedResponse<T>>(`${path}?${buildQuery(1)}`);
+  const items = [...first.items];
+  const totalPages = Math.min(first.totalPages || 1, maxPages);
+  for (let page = 2; page <= totalPages; page++) {
+    const res = await api.get<PaginatedResponse<T>>(`${path}?${buildQuery(page)}`);
+    items.push(...res.items);
+  }
+  return items;
+}

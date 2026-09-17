@@ -1,9 +1,10 @@
-import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { Icon } from '../../icons/Icon';
 import { useOrders } from '../../context/OrdersContext';
+import { getApiErrorMessage } from '../../services/api';
 import { colors, radii, spacing, typography } from '../../theme';
 import { FlowStatusScreen } from './FlowStatusScreen';
 import { FlexButton } from './FlexButton';
@@ -16,11 +17,20 @@ export function OrderDispatchedScreen({ navigation, route }: Props) {
   const { orderId } = route.params;
   const { getOrder, completeOrder } = useOrders();
   const order = getOrder(orderId);
-  if (!order || !order.deliveryPartner) return null;
+  const [completing, setCompleting] = useState(false);
+  if (!order) return null;
 
-  function handleSimulateDelivery() {
-    completeOrder(orderId, { rating: 5, review: 'Excellent service!' });
-    navigation.replace('OrderDelivered', { orderId });
+  async function handleSimulateDelivery() {
+    if (completing) return;
+    setCompleting(true);
+    try {
+      await completeOrder(orderId, { rating: 5, review: 'Excellent service!' });
+      navigation.replace('OrderDelivered', { orderId });
+    } catch (err) {
+      Alert.alert('Could not complete order', getApiErrorMessage(err));
+    } finally {
+      setCompleting(false);
+    }
   }
 
   return (
@@ -54,8 +64,8 @@ export function OrderDispatchedScreen({ navigation, route }: Props) {
               flex={1}
             />
           </View>
-          <Pressable onPress={handleSimulateDelivery} hitSlop={8} style={styles.demoLinkWrapper}>
-            <Text style={styles.demoLink}>Simulate Delivery (Demo) →</Text>
+          <Pressable onPress={handleSimulateDelivery} hitSlop={8} style={styles.demoLinkWrapper} disabled={completing}>
+            <Text style={styles.demoLink}>{completing ? 'Updating…' : 'Simulate Delivery (Demo) →'}</Text>
           </Pressable>
         </View>
       }
@@ -63,7 +73,7 @@ export function OrderDispatchedScreen({ navigation, route }: Props) {
       <View style={styles.detailCard}>
         <View style={styles.detailHeaderRow}>
           <Icon name="bike" size={16} color={DISPATCH_ACCENT} />
-          <Text style={styles.detailHeader}>{order.deliveryPartner.name} is delivering</Text>
+          <Text style={styles.detailHeader}>Delivery partner en route</Text>
         </View>
         <View style={styles.row}>
           <Text style={styles.label}>ETA</Text>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
@@ -7,6 +7,7 @@ import { Button, NavHeader } from '../../components';
 import { Icon } from '../../icons/Icon';
 import { useProductCatalog } from '../../context/ProductCatalogContext';
 import { useInventory } from '../../context/InventoryContext';
+import { getApiErrorMessage } from '../../services/api';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'BulkUpdate'>;
@@ -20,6 +21,7 @@ export function BulkUpdateScreen({ navigation, route }: Props) {
     Object.fromEntries(products.map(product => [product.id, product.stock])),
   );
   const [bulkAmount, setBulkAmount] = useState(50);
+  const [saving, setSaving] = useState(false);
 
   const selectedCount = selected.size;
   const allSelected = selectedCount === products.length;
@@ -41,22 +43,30 @@ export function BulkUpdateScreen({ navigation, route }: Props) {
     setQuantities(prev => ({ ...prev, [id]: Math.max(0, (prev[id] ?? 0) + delta) }));
   }
 
-  function handleApply() {
-    let lastOosProductId: string | undefined;
-    selected.forEach(id => {
-      const newStock = Math.max(0, (quantities[id] ?? 0) + bulkAmount);
-      const result = recordStockChange({
-        productId: id,
-        newStock,
-        reason: 'Bulk Stock Update',
-        type: 'bulk',
-      });
-      if (result?.wentOutOfStock) lastOosProductId = id;
-    });
-    if (lastOosProductId) {
-      navigation.replace('OOSConfirmation', { productId: lastOosProductId });
-    } else {
-      navigation.goBack();
+  async function handleApply() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      let lastOosProductId: string | undefined;
+      for (const id of selected) {
+        const newStock = Math.max(0, (quantities[id] ?? 0) + bulkAmount);
+        const result = await recordStockChange({
+          productId: id,
+          newStock,
+          reason: 'Bulk Stock Update',
+          type: 'bulk',
+        });
+        if (result?.wentOutOfStock) lastOosProductId = id;
+      }
+      if (lastOosProductId) {
+        navigation.replace('OOSConfirmation', { productId: lastOosProductId });
+      } else {
+        navigation.goBack();
+      }
+    } catch (err) {
+      Alert.alert('Could not apply bulk update', getApiErrorMessage(err));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -128,7 +138,8 @@ export function BulkUpdateScreen({ navigation, route }: Props) {
         <Button
           label={`Apply Bulk Update (${selectedCount} product${selectedCount === 1 ? '' : 's'})`}
           onPress={handleApply}
-          disabled={selectedCount === 0}
+          disabled={selectedCount === 0 || saving}
+          loading={saving}
         />
       </View>
     </SafeAreaView>

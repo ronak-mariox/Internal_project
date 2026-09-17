@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { Button } from '../../components';
 import { useProductCatalog } from '../../context/ProductCatalogContext';
+import { getApiErrorMessage } from '../../services/api';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 import { PricingBackHeader } from './PricingBackHeader';
 
@@ -24,16 +25,25 @@ export function TaxEditorScreen({ navigation, route }: Props) {
   const product = products.find(item => item.id === productId);
   const [gstRate, setGstRate] = useState(product?.gstRate ?? '5');
   const [hsnCode, setHsnCode] = useState(product?.hsnCode ?? '');
+  const [saving, setSaving] = useState(false);
 
   if (!product) return null;
 
-  function handleSave() {
-    updateProduct(productId, { gstRate, hsnCode, updatedAt: Date.now() });
-    navigation.replace('PriceUpdated', {
-      productId,
-      headline: 'Tax',
-      message: `Tax slab for ${product?.name} has been updated to ${gstRate}% GST.`,
-    });
+  async function handleSave() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await updateProduct(productId, { gstRate, hsnCode, updatedAt: Date.now() });
+      navigation.replace('PriceUpdated', {
+        productId,
+        headline: 'Tax',
+        message: `Tax slab for ${product?.name} has been updated to ${gstRate}% GST.`,
+      });
+    } catch (err) {
+      Alert.alert('Could not save', getApiErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -81,7 +91,7 @@ export function TaxEditorScreen({ navigation, route }: Props) {
       </ScrollView>
 
       <View style={styles.footer}>
-        <Button label="Save" onPress={handleSave} />
+        <Button label="Save" onPress={handleSave} loading={saving} disabled={saving} />
       </View>
     </SafeAreaView>
   );

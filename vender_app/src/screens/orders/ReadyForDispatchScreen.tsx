@@ -1,8 +1,9 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { useOrders } from '../../context/OrdersContext';
+import { getApiErrorMessage } from '../../services/api';
 import { colors, spacing } from '../../theme';
 import { OrderActionLayout } from './OrderActionLayout';
 import { FlexButton } from './FlexButton';
@@ -12,6 +13,14 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'ReadyForDispatchOrders'
 export function ReadyForDispatchScreen({ navigation }: Props) {
   const { ordersByStatus, handoverToPartner } = useOrders();
   const readyOrders = ordersByStatus(['ready-for-dispatch']);
+
+  async function handleHandover(orderId: string) {
+    try {
+      await handoverToPartner(orderId);
+    } catch (err) {
+      Alert.alert('Could not update order', getApiErrorMessage(err));
+    }
+  }
 
   return (
     <OrderActionLayout
@@ -36,7 +45,7 @@ export function ReadyForDispatchScreen({ navigation }: Props) {
           />
           <FlexButton
             label="Handover →"
-            onPress={() => handoverToPartner(order.id)}
+            onPress={() => handleHandover(order.id)}
             background={colors.primary}
             textColor={colors.white}
             flex={1}

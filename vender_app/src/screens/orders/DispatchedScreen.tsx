@@ -39,7 +39,16 @@ export function DispatchedScreen({ navigation }: Props) {
               <Icon name="phone" size={15} color={colors.primary} />
             </Pressable>
           </View>
-        ) : null
+        ) : (
+          <View style={styles.partnerRow}>
+            <View style={styles.partnerIcon}>
+              <Icon name="bike" size={18} color="#4338CA" />
+            </View>
+            <Text style={styles.partnerText} numberOfLines={1}>
+              Delivery partner will be assigned shortly
+            </Text>
+          </View>
+        )
       }
     />
   );

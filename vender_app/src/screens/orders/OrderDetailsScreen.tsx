@@ -6,6 +6,7 @@ import type { AuthStackParamList } from '../../navigation/types';
 import { FormSectionCard, StatusChip, StatusTimeline, TimelineStep, TimelineStepStatus } from '../../components';
 import { Icon } from '../../icons/Icon';
 import { Order, ORDER_STATUS_META, OrderStatus, useOrders } from '../../context/OrdersContext';
+import { getApiErrorMessage } from '../../services/api';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 import { FlexButton } from './FlexButton';
 
@@ -88,6 +89,19 @@ export function OrderDetailsScreen({ navigation, route }: Props) {
   } = useOrders();
   const order = getOrder(orderId);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function runAction(action: () => Promise<void>, failureTitle: string) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await action();
+    } catch (err) {
+      Alert.alert(failureTitle, getApiErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   if (!order) {
     return (
@@ -132,7 +146,7 @@ export function OrderDetailsScreen({ navigation, route }: Props) {
 
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.metaRow}>
-          06 Sep 2026, {order.timeLabel} · {order.itemsCount} items · ₹{order.amount}
+          {order.timeLabel} · {order.itemsCount} items · ₹{order.amount}
         </Text>
 
         <FormSectionCard title="Order Timeline">
@@ -227,18 +241,20 @@ export function OrderDetailsScreen({ navigation, route }: Props) {
         <View style={styles.footer}>
           <FlexButton
             label="Reject"
-            onPress={() => rejectOrder(order.id)}
+            onPress={() => runAction(() => rejectOrder(order.id), 'Could not reject order')}
             background={colors.errorSurface}
             textColor={colors.error}
             borderColor={colors.errorBorder}
             flex={1}
+            disabled={busy}
           />
           <FlexButton
             label="Accept"
-            onPress={() => acceptOrder(order.id)}
+            onPress={() => runAction(() => acceptOrder(order.id), 'Could not accept order')}
             background={colors.primary}
             textColor={colors.white}
             flex={1.2}
+            disabled={busy}
           />
         </View>
       ) : null}
@@ -251,6 +267,7 @@ export function OrderDetailsScreen({ navigation, route }: Props) {
             background="#7C3AED"
             textColor={colors.white}
             flex={1}
+            disabled={busy}
           />
         </View>
       ) : null}
@@ -259,18 +276,20 @@ export function OrderDetailsScreen({ navigation, route }: Props) {
         <View style={styles.footer}>
           <FlexButton
             label="Fail QC"
-            onPress={() => failQualityCheck(order.id)}
+            onPress={() => runAction(() => failQualityCheck(order.id), 'Could not update order')}
             background={colors.errorSurface}
             textColor={colors.error}
             borderColor={colors.errorBorder}
             flex={1}
+            disabled={busy}
           />
           <FlexButton
             label="Pass QC → Packing"
-            onPress={() => passQualityCheck(order.id)}
+            onPress={() => runAction(() => passQualityCheck(order.id), 'Could not update order')}
             background={colors.primary}
             textColor={colors.white}
             flex={2}
+            disabled={busy}
           />
         </View>
       ) : null}
@@ -279,10 +298,11 @@ export function OrderDetailsScreen({ navigation, route }: Props) {
         <View style={styles.footer}>
           <FlexButton
             label="Mark as Packed → Ready for Dispatch"
-            onPress={() => markPacked(order.id)}
+            onPress={() => runAction(() => markPacked(order.id), 'Could not update order')}
             background="#0891B2"
             textColor={colors.white}
             flex={1}
+            disabled={busy}
           />
         </View>
       ) : null}
@@ -291,10 +311,11 @@ export function OrderDetailsScreen({ navigation, route }: Props) {
         <View style={styles.footer}>
           <FlexButton
             label="Handover →"
-            onPress={() => handoverToPartner(order.id)}
+            onPress={() => runAction(() => handoverToPartner(order.id), 'Could not update order')}
             background={colors.primary}
             textColor={colors.white}
             flex={1}
+            disabled={busy}
           />
         </View>
       ) : null}

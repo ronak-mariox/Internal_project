@@ -1,14 +1,18 @@
 import React from 'react';
+import { Alert } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { useOrders } from '../../context/OrdersContext';
+import { getApiErrorMessage } from '../../services/api';
 import { ItemIssueDecisionView } from './ItemIssueDecisionView';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'QCFailedDecision'>;
 
 export function QCFailedDecisionScreen({ navigation, route }: Props) {
   const { orderId, itemName, itemPrice, itemQty } = route.params;
-  const { rejectOrder } = useOrders();
+  // Same reasoning as MissingItemDecisionScreen: by the QC step the order is already accepted,
+  // so cancelling it here must go through the vendor-cancel endpoint, not pre-accept reject.
+  const { cancelAcceptedOrder } = useOrders();
 
   return (
     <ItemIssueDecisionView
@@ -37,12 +41,16 @@ export function QCFailedDecisionScreen({ navigation, route }: Props) {
         {
           label: 'Cancel this order',
           tone: 'error',
-          onPress: () => {
-            rejectOrder(orderId, `${itemName} failed quality check`);
-            navigation.replace('RejectOrderConfirmation', {
-              orderId,
-              reasonLabel: `${itemName} failed quality check`,
-            });
+          onPress: async () => {
+            try {
+              await cancelAcceptedOrder(orderId, `${itemName} failed quality check`);
+              navigation.replace('RejectOrderConfirmation', {
+                orderId,
+                reasonLabel: `${itemName} failed quality check`,
+              });
+            } catch (err) {
+              Alert.alert('Could not cancel order', getApiErrorMessage(err));
+            }
           },
         },
       ]}

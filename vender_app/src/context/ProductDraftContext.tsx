@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
-import { Product, ProductStatus, useProductCatalog } from './ProductCatalogContext';
+import { CreateProductInput, Product, useProductCatalog } from './ProductCatalogContext';
 
 export type BasicInfoData = {
   name: string;
@@ -123,7 +123,7 @@ type ProductDraftContextValue = {
   updateAvailability: (value: AvailabilityData) => void;
   resetDraft: () => void;
   computedDiscountPercent: () => number;
-  publishDraft: (status: ProductStatus) => Product;
+  publishDraft: () => Promise<Product>;
 };
 
 const ProductDraftContext = createContext<ProductDraftContextValue | null>(null);
@@ -176,35 +176,55 @@ export function ProductDraftProvider({ children }: { children: React.ReactNode }
     return Math.round(((mrp - sp) / mrp) * 1000) / 10;
   }, [draft.pricing]);
 
-  const publishDraft = useCallback(
-    (status: ProductStatus) => {
-      const mrp = parseFloat(draft.pricing?.mrp ?? '0') || 0;
-      const sellingPrice = parseFloat(draft.pricing?.sellingPrice ?? '0') || mrp;
-      const product: Product = {
-        id: `p${Date.now()}`,
-        name: draft.basicInfo?.name ?? 'Untitled Product',
-        brand: draft.basicInfo?.brand ?? '',
-        categoryId: draft.category?.categoryId ?? '',
-        categoryName: draft.category?.categoryName ?? '',
-        subcategoryId: draft.category?.subcategoryId ?? '',
-        subcategoryName: draft.category?.subcategoryName ?? '',
-        mrp,
-        sellingPrice,
-        stock: draft.stock?.opening ?? 0,
-        reorderLevel: parseInt(draft.stock?.reorderLevel ?? '0', 10) || 0,
-        maxStock: parseInt(draft.stock?.maxStock ?? '0', 10) || 0,
-        status,
-        sku: draft.identifiers?.sku ?? '',
-        barcode: draft.identifiers?.barcode || undefined,
-        hsnCode: draft.tax?.hsnCode || undefined,
-        gstRate: draft.tax?.gstRate || undefined,
-        packSize: draft.packSize ? `${draft.packSize.netWeight}${draft.packSize.unit.split(' ')[0]}` : undefined,
-      };
-      addProduct(product);
-      return product;
-    },
-    [draft, addProduct],
-  );
+  const publishDraft = useCallback(async () => {
+    const mrp = parseFloat(draft.pricing?.mrp ?? '0') || 0;
+    const sellingPrice = parseFloat(draft.pricing?.sellingPrice ?? '0') || mrp;
+    const openingStock = draft.stock?.opening ?? 0;
+    const packSizeLabel = draft.packSize
+      ? `${draft.packSize.netWeight}${draft.packSize.unit.split(' ')[0]}`
+      : undefined;
+
+    const manualVariants =
+      draft.packSize?.variantsEnabled && draft.packSize.variants.length > 0 ? draft.packSize.variants : [];
+
+    const variants: CreateProductInput['variants'] =
+      manualVariants.length > 0
+        ? manualVariants.map(variant => ({
+            label: variant.size,
+            mrp: parseFloat(variant.mrp) || 0,
+            price: parseFloat(variant.sellingPrice) || 0,
+            stock: parseInt(variant.stock, 10) || 0,
+            isPrimary: variant.isPrimary,
+          }))
+        : [
+            {
+              label: packSizeLabel || 'Default',
+              mrp,
+              price: sellingPrice,
+              stock: openingStock,
+              isPrimary: true,
+            },
+          ];
+
+    const input: CreateProductInput = {
+      categoryId: draft.category?.categoryId ?? '',
+      subcategoryId: draft.category?.subcategoryId || undefined,
+      name: draft.basicInfo?.name ?? 'Untitled Product',
+      description: draft.description?.fullDescription || draft.basicInfo?.shortDescription || undefined,
+      brand: draft.basicInfo?.brand || undefined,
+      unit: draft.packSize?.unit || undefined,
+      variants,
+      taxRate: parseFloat(draft.tax?.gstRate ?? '0') || 0,
+      sku: draft.identifiers?.sku || undefined,
+      barcode: draft.identifiers?.barcode || undefined,
+      hsnCode: draft.tax?.hsnCode || undefined,
+      countryOfOrigin: draft.basicInfo?.countryOfOrigin || undefined,
+      reorderLevel: parseInt(draft.stock?.reorderLevel ?? '0', 10) || 0,
+      maxStock: parseInt(draft.stock?.maxStock ?? '0', 10) || 0,
+    };
+
+    return addProduct(input);
+  }, [draft, addProduct]);
 
   const value = useMemo(
     () => ({

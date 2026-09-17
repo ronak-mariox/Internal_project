@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { Button, InfoBanner } from '../../components';
 import { useProductCatalog } from '../../context/ProductCatalogContext';
+import { getApiErrorMessage } from '../../services/api';
 import { colors, radii, spacing, typography } from '../../theme';
 import { PricingBackHeader } from './PricingBackHeader';
 import { PriceInputField } from './PriceInputField';
@@ -41,19 +42,28 @@ export function MRPEditorScreen({ navigation, route }: Props) {
   const { products, updateProduct } = useProductCatalog();
   const product = products.find(item => item.id === productId);
   const [mrpText, setMrpText] = useState(String(product?.mrp ?? ''));
+  const [saving, setSaving] = useState(false);
 
   if (!product) return null;
 
   const mrp = parseFloat(mrpText) || 0;
   const history = recentChanges(product.mrp);
 
-  function handleSave() {
-    updateProduct(productId, { mrp, updatedAt: Date.now() });
-    navigation.replace('PriceUpdated', {
-      productId,
-      headline: 'MRP',
-      message: `MRP for ${product?.name} has been updated to ₹${mrp}.`,
-    });
+  async function handleSave() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await updateProduct(productId, { mrp, updatedAt: Date.now() });
+      navigation.replace('PriceUpdated', {
+        productId,
+        headline: 'MRP',
+        message: `MRP for ${product?.name} has been updated to ₹${mrp}.`,
+      });
+    } catch (err) {
+      Alert.alert('Could not save', getApiErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -90,7 +100,7 @@ export function MRPEditorScreen({ navigation, route }: Props) {
       </ScrollView>
 
       <View style={styles.footer}>
-        <Button label="Save" onPress={handleSave} />
+        <Button label="Save" onPress={handleSave} loading={saving} disabled={saving} />
       </View>
     </SafeAreaView>
   );

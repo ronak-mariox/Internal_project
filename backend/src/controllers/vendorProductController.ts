@@ -31,7 +31,24 @@ export async function getMyProduct(req: Request, res: Response) {
 
 export async function createProduct(req: Request, res: Response) {
   await assertApprovedVendor(req.user!.id);
-  const { categoryId, subcategoryId, name, description, brand, unit, images, variants, tags, taxRate } = req.body;
+  const {
+    categoryId,
+    subcategoryId,
+    name,
+    description,
+    brand,
+    unit,
+    images,
+    variants,
+    tags,
+    taxRate,
+    sku,
+    barcode,
+    hsnCode,
+    countryOfOrigin,
+    reorderLevel,
+    maxStock,
+  } = req.body;
 
   const product = await Product.create({
     vendorId: req.user!.id,
@@ -47,6 +64,12 @@ export async function createProduct(req: Request, res: Response) {
     taxRate: taxRate ?? 0,
     status: 'pending',
     isAvailable: true,
+    sku,
+    barcode,
+    hsnCode,
+    countryOfOrigin,
+    reorderLevel,
+    maxStock,
   });
   res.status(201).json(toSafeJson(product));
 }
@@ -55,7 +78,24 @@ export async function updateProduct(req: Request, res: Response) {
   const product = await Product.findOne({ _id: req.params.id, vendorId: req.user!.id });
   if (!product) throw new HttpError(404, 'Product not found');
 
-  const { categoryId, subcategoryId, name, description, brand, unit, images, variants, tags, taxRate } = req.body;
+  const {
+    categoryId,
+    subcategoryId,
+    name,
+    description,
+    brand,
+    unit,
+    images,
+    variants,
+    tags,
+    taxRate,
+    sku,
+    barcode,
+    hsnCode,
+    countryOfOrigin,
+    reorderLevel,
+    maxStock,
+  } = req.body;
   Object.assign(product, {
     ...(categoryId !== undefined && { categoryId }),
     ...(subcategoryId !== undefined && { subcategoryId }),
@@ -67,6 +107,12 @@ export async function updateProduct(req: Request, res: Response) {
     ...(variants !== undefined && { variants }),
     ...(tags !== undefined && { tags }),
     ...(taxRate !== undefined && { taxRate }),
+    ...(sku !== undefined && { sku }),
+    ...(barcode !== undefined && { barcode }),
+    ...(hsnCode !== undefined && { hsnCode }),
+    ...(countryOfOrigin !== undefined && { countryOfOrigin }),
+    ...(reorderLevel !== undefined && { reorderLevel }),
+    ...(maxStock !== undefined && { maxStock }),
   });
   await product.save();
   res.json(toSafeJson(product));

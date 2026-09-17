@@ -16,11 +16,20 @@ export function RetryingActionScreen({ navigation, route }: Props) {
   const order = getOrder(orderId);
 
   useEffect(() => {
+    let cancelled = false;
     const timer = setTimeout(() => {
-      acceptOrder(orderId);
-      navigation.replace('ActionRecovered', { orderId, actionLabel });
+      acceptOrder(orderId)
+        .then(() => {
+          if (!cancelled) navigation.replace('ActionRecovered', { orderId, actionLabel });
+        })
+        .catch(() => {
+          if (!cancelled) navigation.replace('OrderActionError', { orderId, actionLabel });
+        });
     }, 1800);
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [acceptOrder, actionLabel, navigation, orderId]);
 
   if (!order) return null;

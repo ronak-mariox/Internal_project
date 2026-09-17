@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { Button, NavHeader } from '../../components';
 import { ProductVariantSummary, useProductCatalog } from '../../context/ProductCatalogContext';
+import { getApiErrorMessage } from '../../services/api';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'EditPrice'>;
@@ -20,6 +21,7 @@ export function EditPriceScreen({ navigation, route }: Props) {
   const [sellingPrice, setSellingPrice] = useState(String(product?.sellingPrice ?? ''));
   const [variants, setVariants] = useState<ProductVariantSummary[]>(product?.variants ?? []);
   const [editingVariantId, setEditingVariantId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const mrp = product?.mrp ?? 0;
   const sp = parseFloat(sellingPrice) || 0;
@@ -36,9 +38,17 @@ export function EditPriceScreen({ navigation, route }: Props) {
     );
   }
 
-  function handleSave() {
-    updateProduct(productId, { sellingPrice: sp, variants });
-    navigation.goBack();
+  async function handleSave() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await updateProduct(productId, { sellingPrice: sp, variants });
+      navigation.goBack();
+    } catch (err) {
+      Alert.alert('Could not save', getApiErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
   }
 
   function updateVariantPrice(id: string, price: string) {
@@ -144,7 +154,7 @@ export function EditPriceScreen({ navigation, route }: Props) {
         ) : null}
 
         <View style={styles.footer}>
-          <Button label="Save Changes" onPress={handleSave} />
+          <Button label="Save Changes" onPress={handleSave} loading={saving} disabled={saving} />
         </View>
       </ScrollView>
     </SafeAreaView>

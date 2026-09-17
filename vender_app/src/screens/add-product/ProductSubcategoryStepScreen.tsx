@@ -4,7 +4,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { AddProductHeader, Button, ScreenContainer } from '../../components';
 import { Icon } from '../../icons/Icon';
-import { CATEGORIES } from '../../data/categories';
+import { useProductCatalog } from '../../context/ProductCatalogContext';
 import { useProductDraft } from '../../context/ProductDraftContext';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
@@ -12,7 +12,8 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'ProductSubcategoryStep'
 
 export function ProductSubcategoryStepScreen({ navigation, route }: Props) {
   const { categoryId } = route.params;
-  const category = CATEGORIES.find(item => item.id === categoryId);
+  const { categories } = useProductCatalog();
+  const category = categories.find(item => item.id === categoryId);
   const { draft, updateCategory } = useProductDraft();
   const [selectedId, setSelectedId] = useState(
     draft.category?.categoryId === categoryId ? draft.category.subcategoryId : '',
