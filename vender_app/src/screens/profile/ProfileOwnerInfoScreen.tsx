@@ -57,7 +57,7 @@ export function ProfileOwnerInfoScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.buttonWrapper}>
-          <Button label="Edit Owner Details" onPress={() => navigation.navigate('EditProfile')} />
+          <Button label="Edit Owner Details" onPress={() => navigation.navigate('ProfileEditOwnerInfo')} />
         </View>
 
         <View style={styles.bannerWrapper}>

@@ -5,9 +5,12 @@ import type { AuthStackParamList } from '../../navigation/types';
 import { AddProductHeader, Button, FormSectionCard, Input, ScreenContainer, Switch } from '../../components';
 import { Icon } from '../../icons/Icon';
 import { useProductDraft } from '../../context/ProductDraftContext';
+import { isNonNegativeInteger, type FormErrors } from '../../utils/validators';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'ProductStockQuantity'>;
+
+type Errors = FormErrors<'reorderLevel' | 'maxStock'>;
 
 export function ProductStockQuantityScreen({ navigation }: Props) {
   const { draft, updateStock } = useProductDraft();
@@ -16,12 +19,31 @@ export function ProductStockQuantityScreen({ navigation }: Props) {
   const [maxStock, setMaxStock] = useState(draft.stock?.maxStock ?? '500');
   const [trackAutomatically, setTrackAutomatically] = useState(draft.stock?.trackAutomatically ?? true);
   const [autoPause, setAutoPause] = useState(draft.stock?.autoPause ?? true);
+  const [errors, setErrors] = useState<Errors>({});
 
   function handleContinue() {
+    const nextErrors: Errors = {};
+    if (!isNonNegativeInteger(reorderLevel.trim())) {
+      nextErrors.reorderLevel = 'Enter a valid reorder level';
+    }
+    if (!isNonNegativeInteger(maxStock.trim())) {
+      nextErrors.maxStock = 'Enter a valid max stock';
+    }
+    if (
+      !nextErrors.reorderLevel &&
+      !nextErrors.maxStock &&
+      Number(reorderLevel) > Number(maxStock)
+    ) {
+      nextErrors.maxStock = 'Max stock must be at least the reorder level';
+    }
+
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+
     updateStock({
       opening,
-      reorderLevel: reorderLevel.trim() || '0',
-      maxStock: maxStock.trim() || '0',
+      reorderLevel: reorderLevel.trim(),
+      maxStock: maxStock.trim(),
       trackAutomatically,
       autoPause,
     });
@@ -66,18 +88,26 @@ export function ProductStockQuantityScreen({ navigation }: Props) {
               <Input
                 label="Reorder Level"
                 value={reorderLevel}
-                onChangeText={setReorderLevel}
+                onChangeText={text => {
+                  setReorderLevel(text.replace(/[^0-9]/g, ''));
+                  if (errors.reorderLevel) setErrors(prev => ({ ...prev, reorderLevel: undefined }));
+                }}
                 keyboardType="numeric"
-                helperText="Alert when stock falls below"
+                helperText={errors.reorderLevel ? undefined : 'Alert when stock falls below'}
+                error={errors.reorderLevel}
               />
             </View>
             <View style={styles.halfField}>
               <Input
                 label="Max Stock"
                 value={maxStock}
-                onChangeText={setMaxStock}
+                onChangeText={text => {
+                  setMaxStock(text.replace(/[^0-9]/g, ''));
+                  if (errors.maxStock) setErrors(prev => ({ ...prev, maxStock: undefined }));
+                }}
                 keyboardType="numeric"
-                helperText="Maximum capacity"
+                helperText={errors.maxStock ? undefined : 'Maximum capacity'}
+                error={errors.maxStock}
               />
             </View>
           </View>

@@ -1,14 +1,42 @@
-import React from 'react';
-import {ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import React, {useEffect, useState} from 'react';
+import {Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'OrderAccepted'>;
 
 export function OrderAcceptedScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
+
+  const itemCount = order?.items.reduce((sum, item) => sum + item.quantity, 0) ?? 0;
+  const earnings = order?.driverEarnings?.total ?? order?.pricing.deliveryFee;
+  const distanceKm = (() => {
+    if (!order?.pickup.latitude || !order.pickup.longitude || !order.address.latitude || !order.address.longitude) return null;
+    return haversineKm(order.pickup.latitude, order.pickup.longitude, order.address.latitude, order.address.longitude);
+  })();
+
+  const handleCallStore = () => {
+    if (order?.pickup.phone) {
+      Linking.openURL(`tel:${order.pickup.phone}`).catch(() => {});
+    }
+  };
 
   return (
     <Screen backgroundColor={colors.primary} statusBarStyle="light-content" edges={['top', 'bottom']}>
@@ -23,9 +51,9 @@ export function OrderAcceptedScreen({route, navigation}: Props) {
       <ScrollView style={styles.flex} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <View style={styles.orderCard}>
           <View style={styles.orderCardHeader}>
-            <Text style={styles.orderCardHeaderTitle}>Order #{orderId}</Text>
+            <Text style={styles.orderCardHeaderTitle}>Order #{order?.orderNumber ?? orderId}</Text>
             <View style={styles.itemsBadge}>
-              <Text style={styles.itemsBadgeText}>3 Items</Text>
+              <Text style={styles.itemsBadgeText}>{itemCount || '—'} Items</Text>
             </View>
           </View>
 
@@ -37,46 +65,59 @@ export function OrderAcceptedScreen({route, navigation}: Props) {
                 <View style={styles.routeDotDrop} />
               </View>
               <View style={styles.routeText}>
-                <Text style={styles.routeTitle}>Swiggy Instamart</Text>
-                <Text style={styles.routeSubtitle}>100 Feet Road, Koramangala 6th Block</Text>
+                <Text style={styles.routeTitle}>{order?.pickup.name ?? 'Store'}</Text>
+                <Text style={styles.routeSubtitle}>{order?.pickup.address ?? 'Pickup address'}</Text>
                 <View style={styles.routeSpacer} />
-                <Text style={styles.routeTitle}>Flat 302, Sunrise Apts</Text>
-                <Text style={styles.routeSubtitle}>HSR Layout Sector 2, Bengaluru</Text>
+                <Text style={styles.routeTitle}>{order?.address.line1 ?? 'Customer address'}</Text>
+                <Text style={styles.routeSubtitle}>{order?.address.city ?? ''}</Text>
               </View>
             </View>
 
             <View style={styles.metricsRow}>
-              <Metric value="₹78" label="Earnings" highlighted />
-              <Metric value="3.8 km" label="Distance" />
-              <Metric value="22 min" label="ETA" />
+              <Metric value={earnings != null ? `₹${earnings}` : '—'} label="Earnings" highlighted />
+              <Metric value={distanceKm != null ? `${distanceKm.toFixed(1)} km` : '—'} label="Distance" />
+              <Metric value={distanceKm != null ? `${Math.max(5, Math.round(distanceKm * 4))} min` : '—'} label="ETA" />
             </View>
           </View>
 
           <View style={styles.orderCardActions}>
-            <TouchableOpacity style={[styles.orderCardAction, styles.orderCardActionBordered]} activeOpacity={0.8}>
+            <TouchableOpacity
+              style={[styles.orderCardAction, styles.orderCardActionBordered]}
+              activeOpacity={0.8}
+              onPress={handleCallStore}
+              disabled={!order?.pickup.phone}>
               <Icon name="phone" size={15} color={colors.textSecondary} />
               <Text style={styles.orderCardActionText}>Call Store</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.orderCardAction} activeOpacity={0.8}>
+            <TouchableOpacity
+              style={styles.orderCardAction}
+              activeOpacity={0.8}
+              onPress={() => navigation.navigate('SelectIssueReason', {orderId})}>
               <Icon name="alert-circle" size={15} color={colors.textSecondary} />
               <Text style={styles.orderCardActionText}>Report Issue</Text>
             </TouchableOpacity>
           </View>
         </View>
-
-        <View style={styles.acceptanceBanner}>
-          <Icon name="bar-chart" size={16} color={colors.primary} />
-          <Text style={styles.acceptanceText}>
-            Your acceptance rate: <Text style={styles.acceptanceTextStrong}>94%</Text> · Keep it above 80% to maintain bonuses
-          </Text>
-        </View>
       </ScrollView>
 
       <View style={styles.footer}>
-        <Button label="Navigate to Pickup — 1.2 km" icon="navigation" onPress={() => navigation.navigate('NavigateToStore', {orderId})} />
+        <Button
+          label={distanceKm != null ? `Navigate to Pickup — ${distanceKm.toFixed(1)} km` : 'Navigate to Pickup'}
+          icon="navigation"
+          onPress={() => navigation.navigate('NavigateToStore', {orderId})}
+        />
       </View>
     </Screen>
   );
+}
+
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 function Metric({value, label, highlighted}: {value: string; label: string; highlighted?: boolean}) {
@@ -119,8 +160,5 @@ const styles = StyleSheet.create({
   orderCardAction: {flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 46},
   orderCardActionBordered: {borderRightWidth: 1, borderRightColor: colors.border},
   orderCardActionText: {...typography.label, color: colors.textSecondary},
-  acceptanceBanner: {flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.md},
-  acceptanceText: {flex: 1, ...typography.label, color: colors.textSecondary, lineHeight: 19},
-  acceptanceTextStrong: {...typography.labelSemibold, color: colors.primary},
   footer: {padding: spacing.lg, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border},
 });

@@ -1,14 +1,39 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {StyleSheet, Text, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CustomerConfirmed'>;
 
+function formatTime(iso?: string): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+}
+
 export function CustomerConfirmedScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
+
+  const customerName = order?.address.contactName ?? 'Customer';
+  const verifiedAt = formatTime(order?.deliveredAt);
 
   return (
     <Screen edges={['top', 'bottom']} contentContainerStyle={styles.container}>
@@ -20,17 +45,19 @@ export function CustomerConfirmedScreen({route, navigation}: Props) {
       </View>
 
       <Text style={styles.title}>Customer Verified!</Text>
-      <Text style={styles.subtitle}>OTP matched · Priya Mehta confirmed</Text>
+      <Text style={styles.subtitle}>{`OTP matched · ${customerName} confirmed`}</Text>
 
       <View style={styles.card}>
         <View style={styles.row}>
           <Text style={styles.rowLabel}>Order</Text>
-          <Text style={styles.rowValue}>#{orderId}</Text>
+          <Text style={styles.rowValue}>#{order?.orderNumber ?? orderId}</Text>
         </View>
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>Verified at</Text>
-          <Text style={styles.rowValue}>3:04 PM</Text>
-        </View>
+        {!!verifiedAt && (
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>Verified at</Text>
+            <Text style={styles.rowValue}>{verifiedAt}</Text>
+          </View>
+        )}
         <View style={[styles.row, styles.rowLast]}>
           <Text style={styles.rowLabel}>Method</Text>
           <Text style={styles.rowValue}>Customer OTP</Text>

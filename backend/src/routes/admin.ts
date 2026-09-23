@@ -8,6 +8,8 @@ import * as adminController from '../controllers/adminController';
 import { adminCatalogRouter } from './adminCatalog';
 import { adminOrderRouter } from './adminOrders';
 import { adminCouponRouter } from './adminCoupons';
+import { adminSupportRouter } from './adminSupport';
+import { adminSettlementsRouter } from './adminSettlements';
 
 export const adminRouter = Router();
 
@@ -76,6 +78,33 @@ adminRouter.patch(
 );
 
 adminRouter.get(
+  '/bank-requests',
+  authenticate,
+  authorize('admin'),
+  asyncHandler(adminController.getPendingBankRequests),
+);
+
+adminRouter.patch(
+  '/bank-requests/:vendorId',
+  authenticate,
+  authorize('admin'),
+  param('vendorId').isString().notEmpty(),
+  body('approve').isBoolean(),
+  body('note').optional({ values: 'falsy' }).isString(),
+  handleValidation,
+  asyncHandler(adminController.reviewBankRequest),
+);
+
+adminRouter.get(
+  '/vendors/:id/settlements',
+  authenticate,
+  authorize('admin'),
+  param('id').isString().notEmpty(),
+  handleValidation,
+  asyncHandler(adminController.getVendorSettlements),
+);
+
+adminRouter.get(
   '/drivers/pending',
   authenticate,
   authorize('admin'),
@@ -126,3 +155,5 @@ adminRouter.get('/dashboard', authenticate, authorize('admin'), asyncHandler(adm
 adminRouter.use('/', adminCatalogRouter);
 adminRouter.use('/orders', adminOrderRouter);
 adminRouter.use('/coupons', adminCouponRouter);
+adminRouter.use('/support-tickets', adminSupportRouter);
+adminRouter.use('/settlements', adminSettlementsRouter);

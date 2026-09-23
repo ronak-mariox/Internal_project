@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { LifeBuoy, CircleDot, Clock, CheckCircle2, ArrowUpCircle } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -10,8 +10,9 @@ import { SearchInput, Select } from '@/components/ui/Input';
 import { Tabs, type TabItem } from '@/components/ui/Tabs';
 import { Pagination } from '@/components/ui/Pagination';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { supportTickets } from '@/data/notifications';
-import type { TicketPriority, TicketStatus } from '@/types';
+import { fetchAllPaginated } from '@/lib/api';
+import { mapTicket, errorMessage, type ApiSupportTicket } from '@/lib/adminSupport';
+import type { SupportTicketRecord, TicketPriority, TicketStatus } from '@/types';
 import { timeAgo } from '@/lib/format';
 
 const PAGE_SIZE = 14;
@@ -38,31 +39,56 @@ const RAISED_BY_TONE: Record<string, 'brand' | 'violet' | 'indigo'> = {
 };
 
 export function Support() {
+  const [tickets, setTickets] = useState<SupportTicketRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const [statusTab, setStatusTab] = useState<TicketStatus | 'all'>('all');
   const [search, setSearch] = useState('');
   const [priority, setPriority] = useState<TicketPriority | 'all'>('all');
   const [page, setPage] = useState(1);
 
-  const openCount = useMemo(() => supportTickets.filter((t) => t.status === 'open').length, []);
-  const inProgressCount = useMemo(() => supportTickets.filter((t) => t.status === 'in-progress').length, []);
-  const resolvedCount = useMemo(() => supportTickets.filter((t) => t.status === 'resolved').length, []);
-  const escalatedCount = useMemo(() => supportTickets.filter((t) => t.status === 'escalated').length, []);
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const raw = await fetchAllPaginated<ApiSupportTicket>('/admin/support-tickets');
+        if (cancelled) return;
+        setTickets(raw.map(mapTicket));
+      } catch (err) {
+        if (!cancelled) setLoadError(errorMessage(err, 'Failed to load support tickets'));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const openCount = useMemo(() => tickets.filter((t) => t.status === 'open').length, [tickets]);
+  const inProgressCount = useMemo(() => tickets.filter((t) => t.status === 'in-progress').length, [tickets]);
+  const resolvedCount = useMemo(() => tickets.filter((t) => t.status === 'resolved').length, [tickets]);
+  const escalatedCount = useMemo(() => tickets.filter((t) => t.status === 'escalated').length, [tickets]);
 
   const tabItems: TabItem[] = STATUS_TABS.map((t) => ({
     value: t.value,
     label: t.label,
-    count: t.value === 'all' ? supportTickets.length : supportTickets.filter((tk) => tk.status === t.value).length,
+    count: t.value === 'all' ? tickets.length : tickets.filter((tk) => tk.status === t.value).length,
   }));
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return supportTickets.filter((t) => {
+    return tickets.filter((t) => {
       if (statusTab !== 'all' && t.status !== statusTab) return false;
       if (priority !== 'all' && t.priority !== priority) return false;
-      if (q && !`${t.subject} ${t.raisedBy}`.toLowerCase().includes(q)) return false;
+      if (q && !`${t.subject} ${t.raisedByName}`.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [statusTab, priority, search]);
+  }, [tickets, statusTab, priority, search]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
@@ -138,8 +164,20 @@ export function Support() {
           </div>
         </div>
 
-        {pageItems.length === 0 ? (
-          <EmptyState icon={<LifeBuoy size={24} />} title="No tickets found" description="Try adjusting your search or filters." />
+        {loading ? (
+          <div className="px-5 py-10 text-center text-sm text-ink-400">Loading tickets…</div>
+        ) : loadError ? (
+          <div className="px-5 py-10 text-center text-sm text-danger">{loadError}</div>
+        ) : pageItems.length === 0 ? (
+          <EmptyState
+            icon={<LifeBuoy size={24} />}
+            title="No tickets found"
+            description={
+              tickets.length === 0
+                ? 'No support tickets have been raised yet.'
+                : 'Try adjusting your search or filters.'
+            }
+          />
         ) : (
           <Table>
             <Thead>
@@ -157,11 +195,11 @@ export function Support() {
             <tbody>
               {pageItems.map((t) => (
                 <Tr key={t.id}>
-                  <Td className="font-mono text-xs font-semibold text-ink-700">{t.id}</Td>
+                  <Td className="font-mono text-xs font-semibold text-ink-700">{t.id.slice(-8)}</Td>
                   <Td className="max-w-xs truncate font-medium text-ink-800">{t.subject}</Td>
                   <Td>
                     <div className="flex items-center gap-1.5">
-                      <span className="text-ink-700">{t.raisedBy}</span>
+                      <span className="text-ink-700">{t.raisedByName}</span>
                       <Badge tone={RAISED_BY_TONE[t.raisedByType]} className="capitalize">
                         {t.raisedByType}
                       </Badge>
@@ -179,7 +217,7 @@ export function Support() {
                   <Td>
                     {t.orderId ? (
                       <Link to={`/orders/${t.orderId}`} className="font-medium text-brand-700 hover:underline">
-                        {t.orderId}
+                        View order
                       </Link>
                     ) : (
                       <span className="text-ink-300">—</span>
@@ -192,7 +230,7 @@ export function Support() {
           </Table>
         )}
 
-        {pageItems.length > 0 && (
+        {!loading && !loadError && pageItems.length > 0 && (
           <Pagination page={currentPage} pageCount={pageCount} onChange={setPage} total={filtered.length} pageSize={PAGE_SIZE} />
         )}
       </Card>

@@ -1,21 +1,41 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, Icon, IconBackButton, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PackageDetails'>;
 
-const ITEMS = [
-  {name: 'Almonds 500g', price: '₹299', fragile: true},
-  {name: 'Greek Yogurt', price: '₹89', fragile: false},
-  {name: 'Oats 1kg', price: '₹149', fragile: false},
-];
-
 export function PackageDetailsScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
   const [condition, setCondition] = useState<'good' | 'damaged'>('good');
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
+
+  const items = order?.items ?? [];
+  const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
+
+  const handleConfirm = () => {
+    if (condition === 'damaged') {
+      navigation.navigate('SelectIssueReason', {orderId});
+      return;
+    }
+    navigation.navigate('CollectOrder', {orderId});
+  };
 
   return (
     <Screen edges={['top', 'bottom']}>
@@ -30,40 +50,27 @@ export function PackageDetailsScreen({route, navigation}: Props) {
             <Icon name="package" size={28} color={colors.textSecondary} />
           </View>
           <View style={styles.summaryText}>
-            <Text style={styles.summaryTitle}>1 Package · 3 Items · ~2.3 kg</Text>
-            <Text style={styles.summarySubtitle}>Medium bag (30×20×15 cm)</Text>
+            <Text style={styles.summaryTitle}>
+              {itemCount} Item{itemCount === 1 ? '' : 's'}
+            </Text>
+            <Text style={styles.summarySubtitle}>Order #{order?.orderNumber ?? orderId}</Text>
           </View>
         </View>
 
         <View style={styles.itemsCard}>
           <Text style={styles.cardLabel}>ITEMS</Text>
-          {ITEMS.map((item, index) => (
-            <View key={item.name} style={[styles.itemRow, index > 0 && styles.itemRowBorder]}>
+          {items.map((item, index) => (
+            <View key={`${item.productId}-${item.variantId}`} style={[styles.itemRow, index > 0 && styles.itemRowBorder]}>
               <View style={styles.itemIcon}>
                 <Icon name="package" size={20} color={colors.info} />
               </View>
               <View style={styles.itemText}>
-                <View style={styles.itemNameRow}>
-                  <Text style={styles.itemName}>{item.name}</Text>
-                  {item.fragile && (
-                    <View style={styles.fragileTag}>
-                      <Text style={styles.fragileTagText}>FRAGILE</Text>
-                    </View>
-                  )}
-                </View>
-                <Text style={styles.itemPrice}>{item.price}</Text>
+                <Text style={styles.itemName}>{item.name}</Text>
+                {!!item.variantLabel && <Text style={styles.itemPrice}>{item.variantLabel}</Text>}
               </View>
-              <Text style={styles.itemQty}>1×</Text>
+              <Text style={styles.itemQty}>{item.quantity}×</Text>
             </View>
           ))}
-        </View>
-
-        <View style={styles.warningBanner}>
-          <Icon name="alert-triangle" size={18} color={colors.warning} />
-          <View style={styles.warningText}>
-            <Text style={styles.warningTitle}>Handle with care — dairy product inside</Text>
-            <Text style={styles.warningSubtitle}>Temperature: Keep upright</Text>
-          </View>
         </View>
 
         <View style={styles.conditionCard}>
@@ -84,12 +91,7 @@ export function PackageDetailsScreen({route, navigation}: Props) {
       </ScrollView>
 
       <View style={styles.footer}>
-        <Button
-          label="Confirm Package Details"
-          icon="arrow-right"
-          iconPosition="right"
-          onPress={() => navigation.navigate('CollectOrder', {orderId})}
-        />
+        <Button label="Confirm Package Details" icon="arrow-right" iconPosition="right" onPress={handleConfirm} />
       </View>
     </Screen>
   );
@@ -121,16 +123,9 @@ const styles = StyleSheet.create({
   itemRowBorder: {borderTopWidth: 1, borderTopColor: colors.border},
   itemIcon: {width: 36, height: 36, borderRadius: radius.sm, backgroundColor: colors.infoSurface, alignItems: 'center', justifyContent: 'center'},
   itemText: {flex: 1},
-  itemNameRow: {flexDirection: 'row', alignItems: 'center', gap: spacing.sm},
   itemName: {...typography.bodyMedium, color: colors.textPrimary},
-  fragileTag: {backgroundColor: '#FEF3C7', borderRadius: 4, paddingHorizontal: spacing.xs, paddingVertical: 2},
-  fragileTagText: {...typography.overline, fontSize: 11, color: colors.warning},
   itemPrice: {...typography.label, color: colors.textSecondary, marginTop: 2},
   itemQty: {...typography.bodyMedium, color: colors.textSecondary},
-  warningBanner: {flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A', borderRadius: radius.lg, padding: spacing.md},
-  warningText: {flex: 1},
-  warningTitle: {...typography.bodySemibold, fontSize: 14, color: colors.warningText},
-  warningSubtitle: {...typography.label, color: '#B45309', marginTop: 2},
   conditionCard: {backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.lg, gap: spacing.md},
   conditionTitle: {...typography.bodySemibold, fontSize: 14, color: colors.textPrimary},
   conditionRow: {flexDirection: 'row', alignItems: 'center', gap: spacing.md},

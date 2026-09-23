@@ -1,20 +1,25 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Icon } from '../icons/Icon';
 import { colors, fontFamilies, radii, spacing, typography } from '../theme';
 
 type Props = {
   fileName: string;
+  thumbnailUri?: string;
   onReplace?: () => void;
   onDelete?: () => void;
   compact?: boolean;
 };
 
-export function FileCard({ fileName, onReplace, onDelete, compact = false }: Props) {
+export function FileCard({ fileName, thumbnailUri, onReplace, onDelete, compact = false }: Props) {
   return (
     <View style={styles.card}>
       <View style={[styles.thumbnail, compact && styles.thumbnailCompact]}>
-        <Icon name="check" size={16} color={colors.primary} />
+        {thumbnailUri ? (
+          <Image source={{ uri: thumbnailUri }} style={styles.thumbnailImage} resizeMode="cover" />
+        ) : (
+          <Icon name="check" size={16} color={colors.primary} />
+        )}
       </View>
       <View style={styles.textColumn}>
         <Text style={styles.fileName} numberOfLines={1}>
@@ -60,10 +65,16 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primarySurface,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   thumbnailCompact: {
     width: 44,
     height: 44,
+  },
+  thumbnailImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: radii.md,
   },
   textColumn: {
     flex: 1,

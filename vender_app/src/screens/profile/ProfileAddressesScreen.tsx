@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { useProfile, type Address } from '../../context/ProfileContext';
@@ -13,7 +13,7 @@ export function ProfileAddressesScreen({ navigation }: Props) {
   const { addresses } = useProfile();
 
   function handleAddAddress() {
-    Alert.alert('Add Address', 'Coming soon.');
+    navigation.navigate('ProfileAddAddress');
   }
 
   return (

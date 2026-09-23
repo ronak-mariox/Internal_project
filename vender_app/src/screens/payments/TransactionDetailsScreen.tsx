@@ -38,12 +38,7 @@ export function TransactionDetailsScreen({ navigation, route }: Props) {
   ];
 
   // Only mark tracker steps complete up to what the settlement's real status implies.
-  const stepComplete =
-    settlement.status === 'paid'
-      ? [true, true, true]
-      : settlement.status === 'processing'
-        ? [true, true, false]
-        : [true, false, false];
+  const stepComplete = settlement.status === 'paid' ? [true, true, true] : [true, false, false];
   const steps = [
     { label: 'Initiated', complete: stepComplete[0] },
     { label: 'Processing', complete: stepComplete[1] },

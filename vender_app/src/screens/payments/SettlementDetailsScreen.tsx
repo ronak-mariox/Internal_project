@@ -13,7 +13,6 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'SettlementDetails'>;
 // to the settlement history list.
 const STATUS_META: Record<SettlementStatus, { label: string; background: string; text: string }> = {
   paid: { label: 'Paid', background: colors.primarySurface, text: colors.primary },
-  processing: { label: 'Processing', background: '#FFF7E6', text: colors.warningDark },
   pending: { label: 'Pending', background: colors.warningSurface, text: colors.warningDark },
   failed: { label: 'Failed', background: colors.errorSurface, text: colors.error },
 };

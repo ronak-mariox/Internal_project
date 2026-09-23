@@ -1,16 +1,62 @@
-import React from 'react';
-import {ScrollView, StyleSheet, Text, View} from 'react-native';
+import React, {useEffect, useState} from 'react';
+import {Alert, ScrollView, StyleSheet, Text, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, Icon, IconBackButton, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
+import {getApiErrorMessage} from '../../services/api';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RetryDelivery'>;
 
-const CONDITIONS = ['Customer confirmed available', 'Address verified', 'Package intact'];
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 export function RetryDeliveryScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder, reportIssue} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+  const [escalating, setEscalating] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
+
+  const customerName = order?.address.contactName ?? 'Customer';
+  const addressLine = order?.address.line1;
+  const distanceKm =
+    order?.pickup.latitude != null &&
+    order?.pickup.longitude != null &&
+    order?.address.latitude != null &&
+    order?.address.longitude != null
+      ? haversineKm(order.pickup.latitude, order.pickup.longitude, order.address.latitude, order.address.longitude)
+      : null;
+
+  const handleEscalate = async () => {
+    setEscalating(true);
+    try {
+      const result = await reportIssue(orderId, {type: 'delivery_failed', description: 'Unable to retry delivery'});
+      navigation.navigate('DeliveryFailed', {orderId, order: result.order});
+    } catch (err) {
+      Alert.alert('Could Not Escalate', getApiErrorMessage(err, 'Please try again.'));
+    } finally {
+      setEscalating(false);
+    }
+  };
 
   return (
     <Screen edges={['top', 'bottom']}>
@@ -18,60 +64,33 @@ export function RetryDeliveryScreen({route, navigation}: Props) {
         <IconBackButton onPress={() => navigation.goBack()} />
         <View style={styles.headerText}>
           <Text style={styles.headerTitle}>Retry Delivery</Text>
-          <Text style={styles.headerSubtitle}>Attempt 2 of 3</Text>
-        </View>
-        <View style={styles.attemptTag}>
-          <Text style={styles.attemptTagText}>Attempt 2/3</Text>
+          <Text style={styles.headerSubtitle}>{`Order #${order?.orderNumber ?? orderId}`}</Text>
         </View>
       </View>
 
       <ScrollView style={styles.flex} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-        <View style={styles.availableCard}>
-          <View style={styles.availableHeader}>
-            <View style={styles.availableDot} />
-            <Text style={styles.availableTitle}>Priya Mehta is now available</Text>
-          </View>
-          <Text style={styles.availableSubtitle}>Confirmed via support call at 3:18 PM</Text>
-          <Text style={styles.availableLocation}>Location confirmed: Apt 4B, Tower C</Text>
-        </View>
-
         <View style={styles.card}>
-          <Text style={styles.cardLabel}>UPDATED DELIVERY INFO</Text>
+          <Text style={styles.cardLabel}>DELIVERY INFO</Text>
           <View style={styles.row}>
-            <Text style={styles.rowLabel}>Order</Text>
-            <Text style={styles.rowValue}>#{orderId}</Text>
+            <Text style={styles.rowLabel}>Customer</Text>
+            <Text style={styles.rowValue}>{customerName}</Text>
           </View>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>New ETA</Text>
-            <Text style={styles.rowValueGreen}>3:28 PM</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Distance</Text>
-            <Text style={styles.rowValue}>0.6 km from you</Text>
-          </View>
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.conditionsTitle}>Retry conditions</Text>
-          {CONDITIONS.map(condition => (
-            <View key={condition} style={styles.conditionRow}>
-              <View style={styles.conditionCheck}>
-                <Icon name="check" size={12} color={colors.primary} />
-              </View>
-              <Text style={styles.conditionText}>{condition}</Text>
+          {!!addressLine && (
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Address</Text>
+              <Text style={styles.rowValue}>{addressLine}</Text>
             </View>
-          ))}
-        </View>
-
-        <View style={styles.timerBanner}>
-          <Icon name="clock" size={18} color={colors.warning} />
-          <Text style={styles.timerText}>
-            You have <Text style={styles.timerBold}>20 minutes</Text> to complete this delivery.
-          </Text>
+          )}
+          {distanceKm != null && (
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Distance</Text>
+              <Text style={styles.rowValueGreen}>{`${distanceKm.toFixed(1)} km from store`}</Text>
+            </View>
+          )}
         </View>
 
         <Button
-          label="Start Navigation — 0.6 km"
+          label={distanceKm != null ? `Start Navigation — ${distanceKm.toFixed(1)} km` : 'Start Navigation'}
           icon="navigation"
           onPress={() => navigation.navigate('CustomerNavigationActive', {orderId})}
         />
@@ -79,7 +98,8 @@ export function RetryDeliveryScreen({route, navigation}: Props) {
           label="Cannot Retry — Escalate"
           variant="secondary"
           textColor={colors.danger}
-          onPress={() => navigation.navigate('DeliveryFailed', {orderId})}
+          loading={escalating}
+          onPress={handleEscalate}
         />
       </ScrollView>
     </Screen>
@@ -101,27 +121,12 @@ const styles = StyleSheet.create({
   headerText: {flex: 1},
   headerTitle: {...typography.title, fontSize: 17, color: colors.textPrimary},
   headerSubtitle: {...typography.caption, color: colors.textSecondary},
-  attemptTag: {backgroundColor: colors.warningSurface, borderWidth: 1, borderColor: colors.warning, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 4},
-  attemptTagText: {...typography.captionSemibold, fontSize: 12, color: colors.warningText},
   flex: {flex: 1},
   body: {padding: spacing.lg, gap: spacing.md},
-  availableCard: {backgroundColor: colors.primarySurfaceAlt, borderWidth: 2, borderColor: colors.primary, borderRadius: radius.lg, padding: spacing.lg},
-  availableHeader: {flexDirection: 'row', alignItems: 'center', gap: spacing.sm},
-  availableDot: {width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary},
-  availableTitle: {...typography.bodyBold, fontSize: 15, color: colors.primaryDark},
-  availableSubtitle: {...typography.label, fontSize: 13, color: colors.textSecondary, marginTop: spacing.sm},
-  availableLocation: {...typography.bodyMedium, fontSize: 13, color: colors.textPrimary, marginTop: spacing.xs},
   card: {backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.lg},
   cardLabel: {...typography.captionSemibold, fontSize: 12, color: colors.textSecondary, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: spacing.sm},
   row: {flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3},
   rowLabel: {...typography.label, fontSize: 13, color: colors.textSecondary},
   rowValue: {...typography.bodySemibold, fontSize: 13, color: colors.textPrimary},
   rowValueGreen: {...typography.bodySemibold, fontSize: 13, color: colors.primary},
-  conditionsTitle: {...typography.bodySemibold, fontSize: 14, color: colors.textPrimary, marginBottom: spacing.sm},
-  conditionRow: {flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 4},
-  conditionCheck: {width: 22, height: 22, borderRadius: 11, backgroundColor: colors.primarySurface, borderWidth: 2, borderColor: colors.primary, alignItems: 'center', justifyContent: 'center'},
-  conditionText: {...typography.body, color: colors.textPrimary},
-  timerBanner: {flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.warningSurface, borderWidth: 1, borderColor: colors.warning, borderRadius: radius.md, padding: spacing.md},
-  timerText: {...typography.label, fontSize: 13, color: colors.warningText, flex: 1},
-  timerBold: {fontWeight: '700'},
 });

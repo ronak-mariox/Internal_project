@@ -6,9 +6,45 @@ import { Category } from '../src/models/Category';
 import { Product } from '../src/models/Product';
 import { Review } from '../src/models/Review';
 import { Coupon } from '../src/models/Coupon';
+import type { CategoryVariantConfig } from '../src/models/Category';
 
 declare const process: {
   exitCode?: number;
+};
+
+const WEIGHT_VOLUME_VARIANT_CONFIG: CategoryVariantConfig = {
+  kind: 'weight_volume',
+  label: 'Weight/Volume',
+  units: ['g', 'kg', 'ml', 'L', 'pcs'],
+};
+
+const ELECTRONICS_VARIANT_CONFIG: CategoryVariantConfig = {
+  kind: 'attribute',
+  label: 'Storage',
+  options: ['32GB', '64GB', '128GB', '256GB', '512GB', '1TB'],
+};
+
+const APPAREL_VARIANT_CONFIG: CategoryVariantConfig = {
+  kind: 'attribute',
+  label: 'Size',
+  options: ['XS', 'S', 'M', 'L', 'XL', 'XXL'],
+};
+
+// Subcategory-level overrides: a category's variantConfig is just the default for
+// its subcategories, but some subcategories need a genuinely different unit/variant
+// setup than their siblings — e.g. Fashion's Footwear needs shoe sizes, not the
+// clothing XS-XXL its category default uses; a mobile accessory (cable, case) isn't
+// sold by storage capacity the way the Mobiles category's phones are.
+const FOOTWEAR_VARIANT_CONFIG: CategoryVariantConfig = {
+  kind: 'attribute',
+  label: 'Shoe Size',
+  options: ['UK 6', 'UK 7', 'UK 8', 'UK 9', 'UK 10', 'UK 11'],
+};
+
+const ACCESSORY_VARIANT_CONFIG: CategoryVariantConfig = {
+  kind: 'weight_volume',
+  label: 'Quantity',
+  units: ['pcs', 'set', 'm'],
 };
 
 // No real product photography exists for these demo listings yet (vendors upload
@@ -31,10 +67,21 @@ const CATEGORY_PLACEHOLDER_COLORS: Record<string, string> = {
   monsoon: '2563EB',
 };
 
-function placeholderImageUrl(name: string, categorySlug: string): string {
+function placeholderImageUrl(name: string, categorySlug: string, variantLabel?: string): string {
   const bg = CATEGORY_PLACEHOLDER_COLORS[categorySlug] ?? '6B7280';
+  const text = variantLabel ? `${name}\n${variantLabel}` : name;
   // Force PNG (placehold.co defaults to SVG, which React Native's <Image> can't render).
-  return `https://placehold.co/600x600/${bg}/FFFFFF/png?text=${encodeURIComponent(name)}&font=roboto`;
+  return `https://placehold.co/600x600/${bg}/FFFFFF/png?text=${encodeURIComponent(text)}&font=roboto`;
+}
+
+// A few products get extra angle shots so the customer app's product-detail
+// image carousel has something real to page through instead of a single image.
+const MULTI_IMAGE_VARIANTS = ['Front', 'Back', 'Zoom'];
+const PRODUCTS_WITH_MULTIPLE_IMAGES = new Set(['Fortune Sunflower Oil', 'Redmi 13C 4G Smartphone']);
+
+function placeholderImageUrls(name: string, categorySlug: string): string[] {
+  if (!PRODUCTS_WITH_MULTIPLE_IMAGES.has(name)) return [placeholderImageUrl(name, categorySlug)];
+  return MULTI_IMAGE_VARIANTS.map((variant) => placeholderImageUrl(name, categorySlug, variant));
 }
 
 /**
@@ -85,6 +132,7 @@ async function main() {
     {
       name: 'Grocery',
       slug: 'grocery',
+      variantConfig: WEIGHT_VOLUME_VARIANT_CONFIG,
       subs: [
         { id: 'fruits-vegetables', name: 'Fruits & Vegetables' },
         { id: 'dairy-breakfast', name: 'Dairy & Breakfast' },
@@ -96,6 +144,7 @@ async function main() {
     {
       name: 'Snacks & Beverages',
       slug: 'snacks',
+      variantConfig: WEIGHT_VOLUME_VARIANT_CONFIG,
       subs: [
         { id: 'chips-snacks', name: 'Chips & Snacks' },
         { id: 'chocolates', name: 'Chocolates' },
@@ -107,6 +156,7 @@ async function main() {
     {
       name: 'Personal Care',
       slug: 'personal-care',
+      variantConfig: WEIGHT_VOLUME_VARIANT_CONFIG,
       subs: [
         { id: 'bath-body', name: 'Bath & Body' },
         { id: 'hair-care', name: 'Hair Care' },
@@ -117,6 +167,7 @@ async function main() {
     {
       name: 'Household',
       slug: 'household',
+      variantConfig: WEIGHT_VOLUME_VARIANT_CONFIG,
       subs: [
         { id: 'cleaning', name: 'Cleaning' },
         { id: 'laundry', name: 'Laundry' },
@@ -127,6 +178,7 @@ async function main() {
     {
       name: 'Baby & Pet',
       slug: 'baby-pet',
+      variantConfig: WEIGHT_VOLUME_VARIANT_CONFIG,
       subs: [
         { id: 'baby-care', name: 'Baby Care' },
         { id: 'pet-food', name: 'Pet Food' },
@@ -140,8 +192,9 @@ async function main() {
     {
       name: 'Electronics',
       slug: 'electronics',
+      variantConfig: ELECTRONICS_VARIANT_CONFIG,
       subs: [
-        { id: 'mobile-accessories', name: 'Mobile Accessories' },
+        { id: 'mobile-accessories', name: 'Mobile Accessories', variantConfig: ACCESSORY_VARIANT_CONFIG },
         { id: 'small-appliances', name: 'Small Appliances' },
         { id: 'gadgets', name: 'Gadgets' },
       ],
@@ -149,23 +202,26 @@ async function main() {
     {
       name: 'Mobiles',
       slug: 'mobiles',
+      variantConfig: ELECTRONICS_VARIANT_CONFIG,
       subs: [
         { id: 'smartphones', name: 'Smartphones' },
-        { id: 'mobile-accessories', name: 'Mobile Accessories' },
+        { id: 'mobile-accessories', name: 'Mobile Accessories', variantConfig: ACCESSORY_VARIANT_CONFIG },
       ],
     },
     {
       name: 'Fashion',
       slug: 'fashion',
+      variantConfig: APPAREL_VARIANT_CONFIG,
       subs: [
         { id: 'mens-wear', name: "Men's Wear" },
         { id: 'womens-wear', name: "Women's Wear" },
-        { id: 'footwear', name: 'Footwear' },
+        { id: 'footwear', name: 'Footwear', variantConfig: FOOTWEAR_VARIANT_CONFIG },
       ],
     },
     {
       name: 'Kids',
       slug: 'kids',
+      variantConfig: APPAREL_VARIANT_CONFIG,
       subs: [
         { id: 'toys', name: 'Toys' },
         { id: 'stationery', name: 'Stationery' },
@@ -175,6 +231,7 @@ async function main() {
     {
       name: 'Healthcare',
       slug: 'healthcare',
+      variantConfig: WEIGHT_VOLUME_VARIANT_CONFIG,
       subs: [
         { id: 'otc-medicines', name: 'OTC Medicines' },
         { id: 'health-devices', name: 'Health Devices' },
@@ -184,6 +241,7 @@ async function main() {
     {
       name: 'Gifting',
       slug: 'gifting',
+      variantConfig: WEIGHT_VOLUME_VARIANT_CONFIG,
       subs: [
         { id: 'gift-hampers', name: 'Gift Hampers' },
         { id: 'greeting-cards', name: 'Greeting Cards' },
@@ -192,6 +250,7 @@ async function main() {
     {
       name: 'Paan Store',
       slug: 'paanstore',
+      variantConfig: WEIGHT_VOLUME_VARIANT_CONFIG,
       subs: [
         { id: 'mouth-fresheners', name: 'Mouth Fresheners' },
         { id: 'paan-corner', name: 'Paan Corner' },
@@ -200,6 +259,7 @@ async function main() {
     {
       name: 'Monsoon Store',
       slug: 'monsoon',
+      variantConfig: WEIGHT_VOLUME_VARIANT_CONFIG,
       subs: [
         { id: 'rainwear', name: 'Rainwear' },
         { id: 'umbrellas', name: 'Umbrellas' },
@@ -218,17 +278,41 @@ async function main() {
         sortOrder: i,
         isActive: true,
         showOnHome: true,
-        subcategories: def.subs.map((sub) => ({ id: sub.id, name: sub.name, isActive: true })),
+        subcategories: def.subs.map((sub) => ({
+          id: sub.id,
+          name: sub.name,
+          isActive: true,
+          variantConfig: sub.variantConfig,
+        })),
+        variantConfig: def.variantConfig,
       });
     } else {
       // Backfill any subcategories missing from an older seed run, without touching
       // ones that already exist (which may since have real products attached).
       const existingIds = new Set(category.subcategories.map((s) => s.id));
       const missing = def.subs.filter((sub) => !existingIds.has(sub.id));
+      let changed = false;
       if (missing.length > 0) {
-        category.subcategories.push(...missing.map((sub) => ({ id: sub.id, name: sub.name, isActive: true })));
-        await category.save();
+        category.subcategories.push(
+          ...missing.map((sub) => ({ id: sub.id, name: sub.name, isActive: true, variantConfig: sub.variantConfig })),
+        );
+        changed = true;
       }
+      // Backfill variantConfig onto categories/subcategories seeded before this field
+      // existed, without overwriting a config an admin has since customized.
+      if (!category.variantConfig) {
+        category.variantConfig = def.variantConfig;
+        changed = true;
+      }
+      for (const subDef of def.subs) {
+        if (!subDef.variantConfig) continue;
+        const sub = category.subcategories.find((s) => s.id === subDef.id);
+        if (sub && !sub.variantConfig) {
+          sub.variantConfig = subDef.variantConfig;
+          changed = true;
+        }
+      }
+      if (changed) await category.save();
     }
     categories[def.slug] = category;
   }
@@ -292,7 +376,7 @@ async function main() {
         brand: def.brand,
         countryOfOrigin: 'India',
         unit: def.variants[0].label,
-        images: [placeholderImageUrl(def.name, def.category)],
+        images: placeholderImageUrls(def.name, def.category),
         variants: def.variants.map((v) => ({ ...v, stock: 100 })),
         tags: def.tags,
         taxRate: 5,
@@ -313,8 +397,10 @@ async function main() {
       // React Native's <Image> can't render — regenerate those onto the PNG variant.
       const hasUnrenderableSvgPlaceholder =
         product.images[0]?.includes('placehold.co') && !product.images[0].includes('/png');
-      if (hasNoImage || hasUnrenderableSvgPlaceholder) {
-        product.images = [placeholderImageUrl(def.name, def.category)];
+      const missingMultipleImages =
+        PRODUCTS_WITH_MULTIPLE_IMAGES.has(def.name) && product.images.length < MULTI_IMAGE_VARIANTS.length;
+      if (hasNoImage || hasUnrenderableSvgPlaceholder || missingMultipleImages) {
+        product.images = placeholderImageUrls(def.name, def.category);
         changed = true;
       }
       if (changed) await product.save();

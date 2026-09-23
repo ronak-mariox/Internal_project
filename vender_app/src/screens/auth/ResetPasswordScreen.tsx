@@ -5,11 +5,12 @@ import type { AuthStackParamList } from '../../navigation/types';
 import { Button, IconCircle, Input, NavHeader, PasswordStrengthMeter, ScreenContainer } from '../../components';
 import { useVendorAuth } from '../../context/VendorAuthContext';
 import { getApiErrorMessage } from '../../services/api';
+import { minLength, passwordsMatch, type FormErrors as SharedFormErrors } from '../../utils/validators';
 import { colors, fontFamilies, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'ResetPassword'>;
 
-type FormErrors = Partial<Record<'newPassword' | 'confirmPassword' | 'form', string>>;
+type FormErrors = SharedFormErrors<'newPassword' | 'confirmPassword'>;
 
 export function ResetPasswordScreen({ navigation, route }: Props) {
   const { resetToken } = route.params;
@@ -22,8 +23,8 @@ export function ResetPasswordScreen({ navigation, route }: Props) {
 
   async function handleSubmit() {
     const nextErrors: FormErrors = {};
-    if (newPassword.length < 8) nextErrors.newPassword = 'Password must be at least 8 characters';
-    if (confirmPassword !== newPassword) nextErrors.confirmPassword = 'Passwords do not match';
+    if (!minLength(newPassword, 8)) nextErrors.newPassword = 'Password must be at least 8 characters';
+    if (!passwordsMatch(newPassword, confirmPassword)) nextErrors.confirmPassword = 'Passwords do not match';
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 

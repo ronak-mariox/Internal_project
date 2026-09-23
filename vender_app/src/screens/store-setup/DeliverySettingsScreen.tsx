@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import {
@@ -19,9 +19,12 @@ import {
   type FulfillmentType,
 } from '../../context/StoreSetupContext';
 import { api, getApiErrorMessage } from '../../services/api';
+import { isPositiveNumber, type FormErrors } from '../../utils/validators';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'DeliverySettings'>;
+
+type Errors = FormErrors<'slabs' | 'minimumOrder' | 'freeDeliveryAbove'>;
 
 const CHARGE_TYPES = ['Distance-based slab', 'Flat rate', 'Free delivery'];
 const RADIUS_OPTIONS = [1, 3, 5, 10, 20];
@@ -43,21 +46,37 @@ export function DeliverySettingsScreen({ navigation }: Props) {
   const [slabs, setSlabs] = useState<DeliverySlab[]>(data.delivery?.slabs ?? DEFAULT_SLABS);
   const [freeDeliveryAbove, setFreeDeliveryAbove] = useState(data.delivery?.freeDeliveryAbove ?? '500');
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | undefined>();
+  const [errors, setErrors] = useState<Errors>({});
+
+  function updateSlab(id: string, patch: Partial<DeliverySlab>) {
+    setSlabs(prev => prev.map(slab => (slab.id === id ? { ...slab, ...patch } : slab)));
+    if (errors.slabs) setErrors(prev => ({ ...prev, slabs: undefined }));
+  }
 
   function removeSlab(id: string) {
     setSlabs(prev => prev.filter(slab => slab.id !== id));
   }
 
   function addSlab() {
-    setSlabs(prev => [...prev, { id: `slab-${Date.now()}`, range: 'New range', charge: '₹ 0' }]);
+    setSlabs(prev => [...prev, { id: `slab-${Date.now()}`, range: '', charge: '' }]);
   }
 
   async function handleContinue() {
+    const nextErrors: Errors = {};
     if (slabs.length === 0) {
-      setError('Add at least one delivery slab');
-      return;
+      nextErrors.slabs = 'Add at least one delivery slab';
+    } else if (slabs.some(slab => !slab.range.trim() || !slab.charge.trim())) {
+      nextErrors.slabs = 'Fill in the range and charge for every slab';
     }
+    if (!isPositiveNumber(minimumOrder)) {
+      nextErrors.minimumOrder = 'Enter a valid amount';
+    }
+    if (!isPositiveNumber(freeDeliveryAbove)) {
+      nextErrors.freeDeliveryAbove = 'Enter a valid amount';
+    }
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+
     const value = {
       fulfillmentType,
       deliveryRadiusKm: radius,
@@ -67,13 +86,12 @@ export function DeliverySettingsScreen({ navigation }: Props) {
       freeDeliveryAbove,
     };
     setSaving(true);
-    setError(undefined);
     try {
       await api.patch('/vendor/store-setup/delivery', value);
       updateDelivery(value);
       navigation.navigate('ServiceAvailability');
     } catch (err) {
-      setError(getApiErrorMessage(err));
+      setErrors({ form: getApiErrorMessage(err) });
     } finally {
       setSaving(false);
     }
@@ -138,9 +156,13 @@ export function DeliverySettingsScreen({ navigation }: Props) {
           <Input
             label="Minimum Order for Delivery (₹)"
             value={minimumOrder}
-            onChangeText={text => setMinimumOrder(text.replace(/[^0-9]/g, ''))}
+            onChangeText={text => {
+              setMinimumOrder(text.replace(/[^0-9]/g, ''));
+              if (errors.minimumOrder) setErrors(prev => ({ ...prev, minimumOrder: undefined }));
+            }}
             keyboardType="number-pad"
             placeholder="150"
+            error={errors.minimumOrder}
           />
         </FormSectionCard>
 
@@ -152,8 +174,24 @@ export function DeliverySettingsScreen({ navigation }: Props) {
               {slabs.map(slab => (
                 <View key={slab.id} style={styles.slabRow}>
                   <Icon name="truck" size={14} color={colors.textSecondary} />
-                  <Text style={styles.slabRange}>{slab.range}</Text>
-                  <Text style={styles.slabCharge}>{slab.charge}</Text>
+                  <TextInput
+                    style={styles.slabRangeInput}
+                    value={slab.range}
+                    onChangeText={text => updateSlab(slab.id, { range: text })}
+                    placeholder="e.g. 2 – 5 km"
+                    placeholderTextColor={colors.textTertiary}
+                  />
+                  <TextInput
+                    style={styles.slabChargeInput}
+                    value={slab.charge}
+                    onChangeText={text => {
+                      const digits = text.replace(/[^0-9]/g, '');
+                      updateSlab(slab.id, { charge: digits ? `₹ ${digits}` : '' });
+                    }}
+                    keyboardType="number-pad"
+                    placeholder="₹ 0"
+                    placeholderTextColor={colors.textTertiary}
+                  />
                   <Pressable hitSlop={6} onPress={() => removeSlab(slab.id)}>
                     <Icon name="x" size={13} color={colors.textSecondary} />
                   </Pressable>
@@ -163,20 +201,25 @@ export function DeliverySettingsScreen({ navigation }: Props) {
                 <Icon name="plus" size={14} color={colors.textSecondary} />
                 <Text style={styles.addSlabText}>Add slab</Text>
               </Pressable>
+              {errors.slabs ? <Text style={styles.errorText}>{errors.slabs}</Text> : null}
             </View>
           ) : null}
 
           <Input
             label="Free Delivery Above (₹)"
             value={freeDeliveryAbove}
-            onChangeText={text => setFreeDeliveryAbove(text.replace(/[^0-9]/g, ''))}
+            onChangeText={text => {
+              setFreeDeliveryAbove(text.replace(/[^0-9]/g, ''));
+              if (errors.freeDeliveryAbove) setErrors(prev => ({ ...prev, freeDeliveryAbove: undefined }));
+            }}
             keyboardType="number-pad"
             placeholder="500"
-            helperText="Free delivery for orders above this amount"
+            helperText={errors.freeDeliveryAbove ? undefined : 'Free delivery for orders above this amount'}
+            error={errors.freeDeliveryAbove}
           />
         </FormSectionCard>
 
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {errors.form ? <Text style={styles.errorText}>{errors.form}</Text> : null}
 
         <View style={styles.footer}>
           <Button label="Save & Continue" onPress={handleContinue} loading={saving} />
@@ -257,15 +300,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
-  slabRange: {
+  slabRangeInput: {
     ...typography.label,
     fontFamily: fontFamilies.regular,
     color: colors.textPrimary,
     flex: 1,
+    paddingVertical: 0,
   },
-  slabCharge: {
+  slabChargeInput: {
     ...typography.labelSemibold,
     color: colors.textPrimary,
+    minWidth: 64,
+    textAlign: 'right',
+    paddingVertical: 0,
   },
   addSlabButton: {
     flexDirection: 'row',

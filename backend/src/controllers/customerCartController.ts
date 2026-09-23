@@ -4,6 +4,7 @@ import { Product, type ProductDoc } from '../models/Product';
 import { Coupon } from '../models/Coupon';
 import { HttpError } from '../lib/httpError';
 import { evaluateCoupon, computeOrderPricing, findVariant, priceLine, round2 } from '../lib/pricing';
+import { resolveAppliedOffers } from '../lib/offers';
 
 async function getOrCreateCart(customerId: string) {
   let cart = await Cart.findOne({ customerId });
@@ -12,8 +13,9 @@ async function getOrCreateCart(customerId: string) {
 }
 
 /** Builds the authoritative cart response: joins live product/variant data, drops
- * items whose product/variant no longer exists, and recomputes totals server-side. */
-async function buildCartResponse(cart: { items: CartItem[]; couponCode?: string }) {
+ * items whose product/variant no longer exists, applies any eligible vendor
+ * offers, and recomputes totals server-side. */
+async function buildCartResponse(cart: { items: CartItem[]; couponCode?: string }, customerId: string) {
   const productIds = [...new Set(cart.items.map((i) => String(i.productId)))];
   const products = await Product.find({ _id: { $in: productIds } });
   const productMap = new Map(products.map((p) => [String(p._id), p]));
@@ -39,8 +41,16 @@ async function buildCartResponse(cart: { items: CartItem[]; couponCode?: string 
     lines.push({ product, variantId: item.variantId, quantity: item.quantity });
   }
 
-  const pricedLines = lines.map(({ product, variantId, quantity }) =>
-    priceLine(product, findVariant(product, variantId)!, quantity),
+  const appliedOffers = await resolveAppliedOffers(
+    lines.map(({ product, variantId, quantity }) => ({
+      product,
+      unitPrice: findVariant(product, variantId)!.price,
+      quantity,
+    })),
+    customerId,
+  );
+  const pricedLines = lines.map(({ product, variantId, quantity }, i) =>
+    priceLine(product, findVariant(product, variantId)!, quantity, appliedOffers[i]),
   );
   const itemsTotal = round2(pricedLines.reduce((sum, l) => sum + l.subtotal, 0));
 
@@ -64,6 +74,8 @@ async function buildCartResponse(cart: { items: CartItem[]; couponCode?: string 
       quantity: l.quantity,
       subtotal: l.subtotal,
       maxStock: l.variant.stock,
+      offerId: l.offerId,
+      originalSubtotal: l.originalSubtotal,
     })),
     unavailable,
     couponCode: cart.couponCode ?? null,
@@ -74,7 +86,7 @@ async function buildCartResponse(cart: { items: CartItem[]; couponCode?: string 
 
 export async function getCart(req: Request, res: Response) {
   const cart = await getOrCreateCart(req.user!.id);
-  res.json(await buildCartResponse(cart));
+  res.json(await buildCartResponse(cart, req.user!.id));
 }
 
 export async function addItem(req: Request, res: Response) {
@@ -93,7 +105,7 @@ export async function addItem(req: Request, res: Response) {
     cart.items.push({ productId: product._id as never, variantId, quantity: qtyToAdd });
   }
   await cart.save();
-  res.status(201).json(await buildCartResponse(cart));
+  res.status(201).json(await buildCartResponse(cart, req.user!.id));
 }
 
 export async function updateItem(req: Request, res: Response) {
@@ -109,7 +121,7 @@ export async function updateItem(req: Request, res: Response) {
     item.quantity = quantity;
   }
   await cart.save();
-  res.json(await buildCartResponse(cart));
+  res.json(await buildCartResponse(cart, req.user!.id));
 }
 
 export async function removeItem(req: Request, res: Response) {
@@ -117,7 +129,7 @@ export async function removeItem(req: Request, res: Response) {
   const cart = await getOrCreateCart(req.user!.id);
   cart.items = cart.items.filter((i) => !(String(i.productId) === productId && i.variantId === variantId));
   await cart.save();
-  res.json(await buildCartResponse(cart));
+  res.json(await buildCartResponse(cart, req.user!.id));
 }
 
 export async function clearCart(req: Request, res: Response) {
@@ -125,7 +137,7 @@ export async function clearCart(req: Request, res: Response) {
   cart.items = [];
   cart.couponCode = undefined;
   await cart.save();
-  res.json(await buildCartResponse(cart));
+  res.json(await buildCartResponse(cart, req.user!.id));
 }
 
 export async function applyCoupon(req: Request, res: Response) {
@@ -134,18 +146,18 @@ export async function applyCoupon(req: Request, res: Response) {
   if (!coupon) throw new HttpError(404, 'Invalid coupon code');
 
   const cart = await getOrCreateCart(req.user!.id);
-  const preview = await buildCartResponse({ ...cart.toObject(), couponCode: coupon.code });
+  const preview = await buildCartResponse({ ...cart.toObject(), couponCode: coupon.code }, req.user!.id);
   const { discount, reason } = evaluateCoupon(coupon, preview.pricing.itemsTotal);
   if (discount === 0) throw new HttpError(422, reason ?? 'This coupon cannot be applied');
 
   cart.couponCode = coupon.code;
   await cart.save();
-  res.json(await buildCartResponse(cart));
+  res.json(await buildCartResponse(cart, req.user!.id));
 }
 
 export async function removeCoupon(req: Request, res: Response) {
   const cart = await getOrCreateCart(req.user!.id);
   cart.couponCode = undefined;
   await cart.save();
-  res.json(await buildCartResponse(cart));
+  res.json(await buildCartResponse(cart, req.user!.id));
 }

@@ -39,6 +39,10 @@ export function ProductImagesScreen({ navigation }: Props) {
   }
 
   async function uploadInto(source: 'camera' | 'gallery', slot: 'main' | 'additional') {
+    if (slot === 'additional' && additionalImages.length >= MAX_ADDITIONAL) {
+      setError(`You can add up to ${MAX_ADDITIONAL} additional images`);
+      return;
+    }
     setUploadingSlot(slot);
     try {
       const url = await pickAndUploadProductImage(source);
@@ -46,7 +50,7 @@ export function ProductImagesScreen({ navigation }: Props) {
       setError(undefined);
       setImages(prev => (slot === 'main' ? [url, ...prev.slice(1)] : [...prev, url]));
     } catch (err) {
-      Alert.alert('Upload failed', getApiErrorMessage(err));
+      setError(getApiErrorMessage(err, 'Upload failed. Please try again.'));
     } finally {
       setUploadingSlot(null);
     }
@@ -108,7 +112,6 @@ export function ProductImagesScreen({ navigation }: Props) {
               </View>
             )}
           </Pressable>
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
         </View>
 
         <View style={styles.blockGap}>
@@ -151,6 +154,7 @@ export function ProductImagesScreen({ navigation }: Props) {
               );
             })}
           </View>
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
         </View>
 
         <View style={styles.tipsCard}>

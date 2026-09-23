@@ -7,9 +7,12 @@ import { Icon } from '../../icons/Icon';
 import { useStoreSetup, type DaySchedule, type OperatingHoursData } from '../../context/StoreSetupContext';
 import { TIME_OPTIONS } from '../../utils/time';
 import { api, getApiErrorMessage } from '../../services/api';
+import { isTimeRangeValid, type FormErrors } from '../../utils/validators';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'OperatingHours'>;
+
+type Errors = FormErrors<'hours'>;
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -24,7 +27,7 @@ export function OperatingHoursScreen({ navigation }: Props) {
   const [defaultClose, setDefaultClose] = useState(data.operatingHours?.defaultClose ?? '9:00 PM');
   const [breakEnabled, setBreakEnabled] = useState(data.operatingHours?.breakEnabled ?? false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | undefined>();
+  const [errors, setErrors] = useState<Errors>({});
 
   function currentValue(): OperatingHoursData {
     return {
@@ -36,7 +39,17 @@ export function OperatingHoursScreen({ navigation }: Props) {
     };
   }
 
+  function validateHours(): boolean {
+    if (!isTimeRangeValid(defaultOpen, defaultClose)) {
+      setErrors({ hours: 'Closing time must be after opening time' });
+      return false;
+    }
+    setErrors({});
+    return true;
+  }
+
   function handleApplyToWeekly() {
+    if (!validateHours()) return;
     const value: OperatingHoursData = {
       sameEveryDay,
       defaultOpen,
@@ -49,15 +62,15 @@ export function OperatingHoursScreen({ navigation }: Props) {
   }
 
   async function handleContinue() {
+    if (!validateHours()) return;
     const value = currentValue();
     setSaving(true);
-    setError(undefined);
     try {
       await api.patch('/vendor/store-setup/hours', value);
       updateOperatingHours(value);
       navigation.navigate('HolidayClosure');
     } catch (err) {
-      setError(getApiErrorMessage(err));
+      setErrors({ form: getApiErrorMessage(err) });
     } finally {
       setSaving(false);
     }
@@ -93,14 +106,29 @@ export function OperatingHoursScreen({ navigation }: Props) {
           <View style={styles.timeRow}>
             <View style={styles.timeItem}>
               <Text style={styles.timeLabel}>Opening Time</Text>
-              <SelectField value={defaultOpen} options={TIME_OPTIONS} onChange={setDefaultOpen} />
+              <SelectField
+                value={defaultOpen}
+                options={TIME_OPTIONS}
+                onChange={value => {
+                  setDefaultOpen(value);
+                  if (errors.hours) setErrors({});
+                }}
+              />
             </View>
             <View style={styles.timeDash} />
             <View style={styles.timeItem}>
               <Text style={styles.timeLabel}>Closing Time</Text>
-              <SelectField value={defaultClose} options={TIME_OPTIONS} onChange={setDefaultClose} />
+              <SelectField
+                value={defaultClose}
+                options={TIME_OPTIONS}
+                onChange={value => {
+                  setDefaultClose(value);
+                  if (errors.hours) setErrors({});
+                }}
+              />
             </View>
           </View>
+          {errors.hours ? <Text style={styles.errorText}>{errors.hours}</Text> : null}
 
           <View style={styles.breakRow}>
             <View style={styles.breakTextColumn}>
@@ -123,7 +151,7 @@ export function OperatingHoursScreen({ navigation }: Props) {
           />
         </View>
 
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {errors.form ? <Text style={styles.errorText}>{errors.form}</Text> : null}
 
         <View style={styles.footer}>
           <Button label="Save & Continue" onPress={handleContinue} loading={saving} />

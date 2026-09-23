@@ -6,6 +6,7 @@ import { Driver } from '../models/Driver';
 import { Customer } from '../models/Customer';
 import { Order } from '../models/Order';
 import { Product } from '../models/Product';
+import { VendorSettlement } from '../models/VendorSettlement';
 import { issueTokenPair } from '../lib/tokens';
 import { toSafeJson } from '../lib/sanitize';
 import { notifyVendor } from '../lib/vendorNotify';
@@ -103,6 +104,54 @@ export async function updateVendorStepReview(req: Request, res: Response) {
   }
 
   res.json(toSafeJson(vendor, ['passwordHash']));
+}
+
+export async function getPendingBankRequests(_req: Request, res: Response) {
+  const vendors = await Vendor.find({ 'pendingBankDetails.status': 'pending' }).sort({ updatedAt: -1 });
+  res.json(vendors.map((v) => toSafeJson(v, ['passwordHash'])));
+}
+
+export async function reviewBankRequest(req: Request, res: Response) {
+  const vendor = await Vendor.findById(req.params.vendorId);
+  if (!vendor) throw new HttpError(404, 'Vendor not found');
+  if (vendor.pendingBankDetails?.status !== 'pending') {
+    throw new HttpError(400, 'No pending bank details request for this vendor');
+  }
+
+  const { approve, note } = req.body as { approve: boolean; note?: string };
+
+  if (approve) {
+    vendor.bankDetails = vendor.pendingBankDetails.data;
+    vendor.pendingBankDetails.status = 'approved';
+    vendor.pendingBankDetails.reviewedAt = new Date();
+    vendor.stepReviews = {
+      ...(vendor.stepReviews ?? {}),
+      bankDetails: { status: 'verified', reviewedAt: new Date() },
+    };
+    vendor.markModified('stepReviews');
+  } else {
+    vendor.pendingBankDetails.status = 'rejected';
+    vendor.pendingBankDetails.reviewNote = note || undefined;
+    vendor.pendingBankDetails.reviewedAt = new Date();
+  }
+  vendor.markModified('pendingBankDetails');
+  await vendor.save();
+
+  await notifyVendor(
+    vendor._id,
+    'kyc-status',
+    approve ? 'Bank details updated' : 'Bank details change request rejected',
+    approve ? 'Your bank details change request was approved.' : note || 'Your bank details change request was rejected.',
+  );
+
+  res.json(toSafeJson(vendor, ['passwordHash']));
+}
+
+export async function getVendorSettlements(req: Request, res: Response) {
+  const settlements = await VendorSettlement.find({ vendorId: req.params.id })
+    .sort({ createdAt: -1 })
+    .limit(50);
+  res.json(settlements.map((s) => toSafeJson(s)));
 }
 
 export async function getPendingDrivers(_req: Request, res: Response) {
@@ -253,7 +302,7 @@ export async function getDashboard(_req: Request, res: Response) {
     pendingProductApprovals: pendingProducts,
     totalCustomers,
     totalActiveVendors: totalVendors,
-    recentOrders: recentOrders.map((o) => toSafeJson(o)),
+    recentOrders: recentOrders.map((o) => toSafeJson(o, ['deliveryOtpHash'])),
     revenueByCategory: revenueByCategoryRaw.map((r) => ({ category: r._id, revenue: r.revenue })),
   });
 }

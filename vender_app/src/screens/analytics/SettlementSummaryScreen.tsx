@@ -14,7 +14,6 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'SettlementSummary'>;
 // src/screens/payments/SettlementRow.tsx, kept local to this screen.
 const STATUS_META: Record<SettlementStatus, { label: string; color: string }> = {
   paid: { label: 'Paid', color: colors.primary },
-  processing: { label: 'Processing', color: colors.warningDark },
   pending: { label: 'Pending', color: colors.warningDark },
   failed: { label: 'Failed', color: colors.error },
 };

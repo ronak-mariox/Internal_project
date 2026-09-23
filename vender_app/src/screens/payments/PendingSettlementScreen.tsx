@@ -22,7 +22,6 @@ function formatINR(amount: number) {
 }
 
 const STATUS_NOTE: Record<string, string> = {
-  processing: 'Processing in progress',
   pending: 'Awaiting settlement',
   failed: 'Settlement failed',
 };

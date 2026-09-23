@@ -83,7 +83,7 @@ async function dailySeries(vendorId: Types.ObjectId, from: Date, to: Date) {
   const cancelledTrend = dates.map((d) => orderByDate.get(d)?.cancelled ?? 0);
   const avgOrderTrend = dates.map((_d, i) => (ordersTrend[i] > 0 ? Math.round(revenueTrend[i] / ordersTrend[i]) : 0));
 
-  return { revenueTrend, ordersTrend, avgOrderTrend, cancelledTrend };
+  return { dates, revenueTrend, ordersTrend, avgOrderTrend, cancelledTrend };
 }
 
 export async function getOverview(req: Request, res: Response) {
@@ -106,7 +106,7 @@ export async function getOverview(req: Request, res: Response) {
     { key: 'cancelled', label: 'Cancelled', value: String(current.cancelled), sparkline: series.cancelledTrend, ...percentChange(current.cancelled, previous.cancelled) },
   ];
 
-  res.json({ kpiStats, revenueTrend: series.revenueTrend });
+  res.json({ kpiStats, revenueTrend: series.revenueTrend, revenueDates: series.dates });
 }
 
 async function productRevenueByPeriod(vendorId: Types.ObjectId, from: Date, to: Date) {

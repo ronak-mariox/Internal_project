@@ -1,43 +1,79 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Avatar, Icon} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CallCustomer'>;
 
 const QUICK_MESSAGES = ['I\'m outside your building', 'Please come to the gate', 'Where should I leave the package?'];
 
+function initialsFor(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  return parts
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join('');
+}
+
 export function CallCustomerScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
   const [muted, setMuted] = useState(false);
   const [speakerOn, setSpeakerOn] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
+
+  const customerName = order?.address.contactName ?? 'Customer';
+  const orderMeta = order
+    ? [`Order #${order.orderNumber}`, order.address.city].filter(Boolean).join(' · ')
+    : `Order #${orderId}`;
 
   return (
     <View style={styles.container}>
       <View style={styles.callInfo}>
-        <Avatar initials="PM" size={80} />
-        <Text style={styles.name}>Priya Mehta</Text>
+        <Avatar initials={initialsFor(customerName)} size={80} />
+        <Text style={styles.name}>{customerName}</Text>
         <View style={styles.statusRow}>
           <Text style={styles.statusText}>Calling</Text>
           <View style={styles.dot} />
           <View style={styles.dot} />
           <View style={styles.dot} />
         </View>
-        <Text style={styles.orderText}>Order #{orderId} · HSR Layout Sector 2</Text>
+        <Text style={styles.orderText}>{orderMeta}</Text>
       </View>
 
       <View style={styles.messagesBlock}>
         <Text style={styles.messagesLabel}>Can't connect? Send a quick message:</Text>
         <View style={styles.messagesList}>
           {QUICK_MESSAGES.map(message => (
-            <TouchableOpacity key={message} style={styles.messageChip} activeOpacity={0.8}>
+            <TouchableOpacity
+              key={message}
+              style={styles.messageChip}
+              activeOpacity={0.8}
+              onPress={() => navigation.navigate('MessageCustomer', {orderId})}>
               <Text style={styles.messageChipText}>{message}</Text>
             </TouchableOpacity>
           ))}
         </View>
-        <TouchableOpacity style={styles.sendMessageButton} activeOpacity={0.85}>
+        <TouchableOpacity
+          style={styles.sendMessageButton}
+          activeOpacity={0.85}
+          onPress={() => navigation.navigate('MessageCustomer', {orderId})}>
           <Text style={styles.sendMessageText}>Send Message</Text>
         </TouchableOpacity>
       </View>

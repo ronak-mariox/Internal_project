@@ -1,14 +1,32 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
-import {Icon, IconBackButton, Screen} from '../../components';
+import {Icon, IconBackButton, Loader, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'StoreIssueDelivery'>;
 
 export function StoreIssueDeliveryScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    getOrder(orderId)
+      .then(o => { if (!cancelled) setOrder(o); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [orderId, getOrder]);
+
+  const subtitle = order
+    ? [`Order #${order.orderNumber}`, order.address.contactName, order.address.city].filter(Boolean).join(' · ')
+    : `Order #${orderId}`;
 
   return (
     <Screen edges={['top', 'bottom']}>
@@ -16,19 +34,18 @@ export function StoreIssueDeliveryScreen({route, navigation}: Props) {
         <IconBackButton onPress={() => navigation.goBack()} />
         <View style={styles.headerText}>
           <Text style={styles.headerTitle}>Store Issue — Delivery</Text>
-          <Text style={styles.headerSubtitle}>Order #{orderId} · Priya Mehta · HSR Layout</Text>
+          <Text style={styles.headerSubtitle}>{subtitle}</Text>
         </View>
       </View>
 
+      {loading && <Loader label="Loading…" fullscreen />}
+
+      {!loading && (
       <ScrollView style={styles.flex} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <View style={styles.summaryCard}>
           <Text style={styles.summaryLabel}>ISSUE SUMMARY</Text>
-          <Text style={styles.summaryStore}>Swiggy Instamart, Koramangala</Text>
-          <Text style={styles.summaryText}>Store has flagged an issue with this order</Text>
-          <View style={styles.flagTag}>
-            <Icon name="alert-circle" size={14} color={colors.warningText} />
-            <Text style={styles.flagTagText}>Item quality complaint</Text>
-          </View>
+          <Text style={styles.summaryStore}>{order?.pickup.name ?? 'Store'}</Text>
+          <Text style={styles.summaryText}>Review the order before proceeding</Text>
         </View>
 
         <Text style={styles.sectionLabel}>Your Options</Text>
@@ -59,7 +76,7 @@ export function StoreIssueDeliveryScreen({route, navigation}: Props) {
         <TouchableOpacity
           style={styles.optionRow}
           activeOpacity={0.85}
-          onPress={() => navigation.reset({index: 0, routes: [{name: 'Home'}]})}>
+          onPress={() => navigation.navigate('PickupSupport', {orderId})}>
           <View style={styles.optionIconNeutral}>
             <Icon name="alert-circle" size={20} color={colors.textSecondary} />
           </View>
@@ -88,6 +105,7 @@ export function StoreIssueDeliveryScreen({route, navigation}: Props) {
           </Text>
         </View>
       </ScrollView>
+      )}
     </Screen>
   );
 }
@@ -113,8 +131,6 @@ const styles = StyleSheet.create({
   summaryLabel: {...typography.captionSemibold, fontSize: 12, color: colors.warningText, letterSpacing: 0.6, textTransform: 'uppercase'},
   summaryStore: {...typography.bodySemibold, fontSize: 14, color: colors.textPrimary, marginTop: spacing.sm},
   summaryText: {...typography.label, fontSize: 13, color: colors.textLabel, marginTop: 2},
-  flagTag: {flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.warningBorder, borderRadius: 6, paddingHorizontal: spacing.sm, paddingVertical: 6, marginTop: spacing.sm},
-  flagTagText: {...typography.labelSemibold, fontSize: 13, color: colors.warningText},
   sectionLabel: {...typography.bodySemibold, fontSize: 13, color: colors.textPrimary},
   optionRow: {flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md},
   optionRowPrimary: {borderColor: colors.primary},

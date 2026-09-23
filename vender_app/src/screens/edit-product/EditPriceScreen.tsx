@@ -1,14 +1,17 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { Button, NavHeader } from '../../components';
 import { ProductVariantSummary, useProductCatalog } from '../../context/ProductCatalogContext';
 import { getApiErrorMessage } from '../../services/api';
+import { type FormErrors } from '../../utils/validators';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'EditPrice'>;
+
+type Errors = FormErrors<'sellingPrice'>;
 
 const PLATFORM_FEE_RATE = 0.08;
 const GST_ON_FEE_RATE = 0.18;
@@ -22,6 +25,7 @@ export function EditPriceScreen({ navigation, route }: Props) {
   const [variants, setVariants] = useState<ProductVariantSummary[]>(product?.variants ?? []);
   const [editingVariantId, setEditingVariantId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<Errors>({});
 
   const mrp = product?.mrp ?? 0;
   const sp = parseFloat(sellingPrice) || 0;
@@ -40,12 +44,22 @@ export function EditPriceScreen({ navigation, route }: Props) {
 
   async function handleSave() {
     if (saving) return;
+
+    const nextErrors: Errors = {};
+    if (sp <= 0) {
+      nextErrors.sellingPrice = 'Enter a valid selling price';
+    } else if (sp > mrp) {
+      nextErrors.sellingPrice = 'Selling price cannot exceed MRP';
+    }
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+
     setSaving(true);
     try {
       await updateProduct(productId, { sellingPrice: sp, variants });
       navigation.goBack();
     } catch (err) {
-      Alert.alert('Could not save', getApiErrorMessage(err));
+      setErrors({ form: getApiErrorMessage(err, 'Could not save. Please try again.') });
     } finally {
       setSaving(false);
     }
@@ -76,15 +90,19 @@ export function EditPriceScreen({ navigation, route }: Props) {
               <Text style={styles.label}>Selling Price (₹)</Text>
               <Text style={styles.required}> *</Text>
             </View>
-            <View style={styles.amountField}>
+            <View style={[styles.amountField, errors.sellingPrice && styles.amountFieldError]}>
               <Text style={styles.amountCurrency}>₹</Text>
               <TextInput
                 value={sellingPrice}
-                onChangeText={text => setSellingPrice(text.replace(/[^0-9.]/g, ''))}
+                onChangeText={text => {
+                  setSellingPrice(text.replace(/[^0-9.]/g, ''));
+                  if (errors.sellingPrice) setErrors(prev => ({ ...prev, sellingPrice: undefined }));
+                }}
                 keyboardType="decimal-pad"
                 style={styles.amountInput}
               />
             </View>
+            {errors.sellingPrice ? <Text style={styles.errorText}>{errors.sellingPrice}</Text> : null}
           </View>
 
           <View style={styles.metricsRow}>
@@ -152,6 +170,8 @@ export function EditPriceScreen({ navigation, route }: Props) {
             })}
           </View>
         ) : null}
+
+        {errors.form ? <Text style={styles.errorText}>{errors.form}</Text> : null}
 
         <View style={styles.footer}>
           <Button label="Save Changes" onPress={handleSave} loading={saving} disabled={saving} />
@@ -234,6 +254,15 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     paddingHorizontal: spacing.xl,
     backgroundColor: colors.white,
+  },
+  amountFieldError: {
+    borderColor: colors.error,
+    backgroundColor: colors.errorSurface,
+  },
+  errorText: {
+    ...typography.caption,
+    color: colors.error,
+    marginTop: spacing.sm,
   },
   amountCurrency: {
     ...typography.h2,

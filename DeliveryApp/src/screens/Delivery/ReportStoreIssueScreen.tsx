@@ -75,7 +75,7 @@ export function ReportStoreIssueScreen({route, navigation}: Props) {
           icon="arrow-right"
           iconPosition="right"
           style={styles.submitButton}
-          onPress={() => navigation.goBack()}
+          onPress={() => navigation.navigate('PickupSupport', {orderId})}
         />
       </View>
     </Screen>

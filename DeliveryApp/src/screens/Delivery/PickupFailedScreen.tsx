@@ -1,14 +1,32 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PickupFailed'>;
 
 export function PickupFailedScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+  const [failedAt] = useState(() => new Date());
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
+
+  const storeName = order?.pickup.name ?? 'the store';
 
   return (
     <Screen backgroundColor="#D92D20" statusBarStyle="light-content" edges={['top', 'bottom']}>
@@ -17,23 +35,19 @@ export function PickupFailedScreen({route, navigation}: Props) {
           <Icon name="x" size={28} color={colors.white} />
         </View>
         <Text style={styles.headerTitle}>Pickup Failed</Text>
-        <Text style={styles.headerSubtitle}>Unable to collect order from Swiggy Instamart.</Text>
+        <Text style={styles.headerSubtitle}>Unable to collect order from {storeName}.</Text>
       </View>
 
       <ScrollView style={styles.flex} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <View style={styles.card}>
           <Text style={styles.cardLabel}>FAILURE DETAILS</Text>
           <View style={styles.row}>
-            <Text style={styles.rowLabel}>Selected reason</Text>
-            <Text style={styles.rowValueDanger}>Store cannot find order</Text>
-          </View>
-          <View style={styles.row}>
             <Text style={styles.rowLabel}>Time of failure</Text>
-            <Text style={styles.rowValue}>2:38 PM</Text>
+            <Text style={styles.rowValue}>{failedAt.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}</Text>
           </View>
           <View style={styles.row}>
             <Text style={styles.rowLabel}>Order</Text>
-            <Text style={styles.rowValue}>#{orderId}</Text>
+            <Text style={styles.rowValue}>#{order?.orderNumber ?? orderId}</Text>
           </View>
         </View>
 
@@ -74,17 +88,15 @@ export function PickupFailedScreen({route, navigation}: Props) {
         <TouchableOpacity
           style={[styles.optionRow, styles.optionRowDanger]}
           activeOpacity={0.85}
-          onPress={() => navigation.reset({index: 0, routes: [{name: 'Home'}]})}>
+          onPress={() => navigation.navigate('SelectIssueReason', {orderId})}>
           <View style={styles.optionIconRed}>
             <Icon name="x" size={20} color={colors.danger} />
           </View>
           <View style={styles.optionText}>
-            <Text style={styles.optionTitleDanger}>Cancel Order</Text>
-            <Text style={styles.optionSubtitle}>Cannot fulfill this order</Text>
+            <Text style={styles.optionTitleDanger}>Cannot Fulfill Order</Text>
+            <Text style={styles.optionSubtitle}>Report an issue to release this order</Text>
           </View>
         </TouchableOpacity>
-
-        <Text style={styles.footnote}>Support response time: ~2 min</Text>
       </ScrollView>
     </Screen>
   );

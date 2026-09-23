@@ -6,21 +6,24 @@ import { AddProductHeader, Button, FormSectionCard, Input, ScreenContainer, Sele
 import { Icon } from '../../icons/Icon';
 import { COMMON_GST_RATES, GST_RATES } from '../../data/categories';
 import { useProductDraft } from '../../context/ProductDraftContext';
+import { isValidHSN, type FormErrors } from '../../utils/validators';
 import { colors, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'ProductTaxInfo'>;
+
+type Errors = FormErrors<'gst' | 'hsn'>;
 
 export function ProductTaxInfoScreen({ navigation }: Props) {
   const { draft, updateTax } = useProductDraft();
   const initialLabel = GST_RATES.find(item => item.value === draft.tax?.gstRate)?.label ?? '';
   const [gstLabel, setGstLabel] = useState(initialLabel);
   const [hsnCode, setHsnCode] = useState(draft.tax?.hsnCode ?? '');
-  const [error, setError] = useState<Record<string, string>>({});
+  const [error, setError] = useState<Errors>({});
 
   function handleContinue() {
-    const nextErrors: Record<string, string> = {};
+    const nextErrors: Errors = {};
     if (!gstLabel) nextErrors.gst = 'Select a GST rate';
-    if (!hsnCode.trim()) nextErrors.hsn = 'Enter the HSN code';
+    if (!isValidHSN(hsnCode.trim())) nextErrors.hsn = 'Enter a valid HSN code (4-8 digits)';
     setError(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
@@ -46,7 +49,10 @@ export function ProductTaxInfoScreen({ navigation }: Props) {
             required
             value={gstLabel}
             options={GST_RATES.map(item => item.label)}
-            onChange={setGstLabel}
+            onChange={value => {
+              setGstLabel(value);
+              if (error.gst) setError(prev => ({ ...prev, gst: undefined }));
+            }}
             placeholder="Select GST rate"
           />
           {error.gst ? <Text style={styles.errorText}>{error.gst}</Text> : null}
@@ -55,7 +61,10 @@ export function ProductTaxInfoScreen({ navigation }: Props) {
             label="HSN Code"
             required
             value={hsnCode}
-            onChangeText={setHsnCode}
+            onChangeText={text => {
+              setHsnCode(text.replace(/[^0-9]/g, ''));
+              if (error.hsn) setError(prev => ({ ...prev, hsn: undefined }));
+            }}
             placeholder="e.g. 2501"
             leftIcon="hash"
             keyboardType="number-pad"

@@ -1,9 +1,10 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {ScrollView, StyleSheet, Text, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'AssignmentFailed'>;
 
@@ -22,6 +23,20 @@ const NEXT_STEPS = [
 
 export function AssignmentFailedScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [orderNumber, setOrderNumber] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrderNumber(o.orderNumber);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
 
   return (
     <Screen backgroundColor="#D92D20" statusBarStyle="light-content" edges={['top', 'bottom']}>
@@ -44,8 +59,8 @@ export function AssignmentFailedScreen({route, navigation}: Props) {
             <View style={styles.errorText}>
               <Text style={styles.errorTitle}>Order could not be assigned</Text>
               <Text style={styles.errorDescription}>
-                We were unable to complete the delivery assignment for order <Text style={styles.errorDescriptionStrong}>#{orderId}</Text>
-                . This is a system-level issue.
+                We were unable to complete the delivery assignment for order{' '}
+                <Text style={styles.errorDescriptionStrong}>#{orderNumber ?? orderId}</Text>. This is a system-level issue.
               </Text>
             </View>
           </View>
@@ -68,8 +83,8 @@ export function AssignmentFailedScreen({route, navigation}: Props) {
         </View>
 
         <View style={styles.safeBanner}>
-          <Text style={styles.safeBannerTitle}>Your acceptance rate is safe</Text>
-          <Text style={styles.safeBannerText}>This error is on our side. It will NOT affect your acceptance rate, earnings, or performance score.</Text>
+          <Text style={styles.safeBannerTitle}>Nothing to worry about</Text>
+          <Text style={styles.safeBannerText}>This error is on our side. It will NOT affect your account, earnings, or standing.</Text>
         </View>
 
         <View style={styles.card}>
@@ -97,7 +112,12 @@ export function AssignmentFailedScreen({route, navigation}: Props) {
             style={styles.footerButton}
             onPress={() => navigation.reset({index: 0, routes: [{name: 'Home'}]})}
           />
-          <Button label="Contact Support" variant="secondary" style={styles.footerButton} />
+          <Button
+            label="Contact Support"
+            variant="secondary"
+            style={styles.footerButton}
+            onPress={() => navigation.reset({index: 0, routes: [{name: 'Home'}]})}
+          />
         </View>
       </View>
     </Screen>

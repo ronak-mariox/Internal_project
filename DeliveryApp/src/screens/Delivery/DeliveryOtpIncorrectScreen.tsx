@@ -1,14 +1,40 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, Icon, IconBackButton, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'DeliveryOtpIncorrect'>;
 
+function initialsFor(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  return parts
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join('');
+}
+
 export function DeliveryOtpIncorrectScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
+
+  const customerName = order?.address.contactName ?? 'Customer';
 
   return (
     <Screen edges={['top', 'bottom']} keyboardAvoiding>
@@ -25,9 +51,9 @@ export function DeliveryOtpIncorrectScreen({route, navigation}: Props) {
 
         <View style={styles.customerPill}>
           <View style={styles.customerAvatar}>
-            <Text style={styles.customerAvatarText}>PM</Text>
+            <Text style={styles.customerAvatarText}>{initialsFor(customerName)}</Text>
           </View>
-          <Text style={styles.customerName}>Priya Mehta</Text>
+          <Text style={styles.customerName}>{customerName}</Text>
         </View>
 
         <View style={styles.otpRow}>
@@ -38,9 +64,7 @@ export function DeliveryOtpIncorrectScreen({route, navigation}: Props) {
           ))}
         </View>
 
-        <Text style={styles.attemptsText}>2 attempts remaining (of 3)</Text>
-
-        <TouchableOpacity hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+        <TouchableOpacity hitSlop={{top: 8, bottom: 8, left: 8, right: 8}} onPress={() => navigation.navigate('StateActionFailed')}>
           <Text style={styles.helpLink}>Customer doesn't have OTP?</Text>
         </TouchableOpacity>
       </View>

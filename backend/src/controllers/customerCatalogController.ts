@@ -5,6 +5,30 @@ import { Product } from '../models/Product';
 import { Review } from '../models/Review';
 import { toSafeJson } from '../lib/sanitize';
 import { HttpError } from '../lib/httpError';
+import { applyOfferPrice, matchOffersForProducts } from '../lib/offers';
+import type { OfferDoc } from '../models/Offer';
+
+/** Attaches the matched active offer (if any) and, per variant, the real
+ * offer-discounted `effectivePrice` a customer would actually be charged —
+ * mirrors the discount that `priceLine()` applies at checkout, so the price
+ * shown in the catalog is never cosmetic. */
+function withOffer(product: InstanceType<typeof Product>, offer: OfferDoc | null) {
+  const json = toSafeJson(product) as Record<string, unknown> | null;
+  if (!json) return json;
+  json.activeOffer = offer
+    ? { id: String(offer._id), title: offer.title, discountType: offer.discountType, discountValue: offer.discountValue }
+    : null;
+  json.variants = (json.variants as { price: number }[]).map((v) => ({
+    ...v,
+    effectivePrice: offer ? applyOfferPrice(v.price, offer) : v.price,
+  }));
+  return json;
+}
+
+async function withOffers(products: InstanceType<typeof Product>[]) {
+  const offers = await matchOffersForProducts(products);
+  return products.map((p) => withOffer(p, offers.get(String(p._id)) ?? null));
+}
 
 export async function getCategories(_req: Request, res: Response) {
   const categories = await Category.find({ isActive: true }).sort({ sortOrder: 1 });
@@ -42,7 +66,7 @@ export async function listProducts(req: Request, res: Response) {
   ]);
 
   res.json({
-    items: items.map((p) => toSafeJson(p)),
+    items: await withOffers(items),
     page,
     limit,
     total,
@@ -74,9 +98,24 @@ export async function getProduct(req: Request, res: Response) {
     : { avg: 0, count: 0 };
   const isWishlisted = (customer?.wishlist ?? []).some((id) => String(id) === String(product._id));
 
+  const similarRatingAgg = similar.length
+    ? await Review.aggregate([
+        { $match: { productId: { $in: similar.map((p) => p._id) } } },
+        { $group: { _id: '$productId', avg: { $avg: '$rating' }, count: { $sum: 1 } } },
+      ])
+    : [];
+  const similarRatingsById = new Map(
+    similarRatingAgg.map((r) => [String(r._id), { avg: Math.round(r.avg * 10) / 10, count: r.count }]),
+  );
+
+  const offers = await matchOffersForProducts([product, ...similar]);
+
   res.json({
-    product: toSafeJson(product),
-    similar: similar.map((p) => toSafeJson(p)),
+    product: withOffer(product, offers.get(String(product._id)) ?? null),
+    similar: similar.map((p) => ({
+      ...withOffer(p, offers.get(String(p._id)) ?? null),
+      rating: similarRatingsById.get(String(p._id)) ?? { avg: 0, count: 0 },
+    })),
     rating,
     reviews: reviews.map((r) => toSafeJson(r)),
     isWishlisted,
@@ -99,13 +138,15 @@ export async function getHome(_req: Request, res: Response) {
     Category.find({ isActive: true, showOnHome: true }).sort({ sortOrder: 1 }).limit(6),
   ]);
 
+  const offers = await matchOffersForProducts([...deals, ...saver, ...essentials, ...snacks, ...monsoon]);
+
   res.json({
     categories: categories.map((c) => toSafeJson(c)),
-    topDeals: deals.map((p) => toSafeJson(p)),
-    saverItems: saver.map((p) => toSafeJson(p)),
-    essentialItems: essentials.map((p) => toSafeJson(p)),
-    snackItems: snacks.map((p) => toSafeJson(p)),
-    monsoonItems: monsoon.map((p) => toSafeJson(p)),
+    topDeals: deals.map((p) => withOffer(p, offers.get(String(p._id)) ?? null)),
+    saverItems: saver.map((p) => withOffer(p, offers.get(String(p._id)) ?? null)),
+    essentialItems: essentials.map((p) => withOffer(p, offers.get(String(p._id)) ?? null)),
+    snackItems: snacks.map((p) => withOffer(p, offers.get(String(p._id)) ?? null)),
+    monsoonItems: monsoon.map((p) => withOffer(p, offers.get(String(p._id)) ?? null)),
     banners: banners.map((c) => ({ id: String(c._id), title: c.name, imageUrl: c.imageUrl })),
   });
 }
@@ -117,5 +158,5 @@ export async function search(req: Request, res: Response) {
     return;
   }
   const items = await Product.find({ status: 'active', isAvailable: true, $text: { $search: q } }).limit(20);
-  res.json({ items: items.map((p) => toSafeJson(p)) });
+  res.json({ items: await withOffers(items) });
 }

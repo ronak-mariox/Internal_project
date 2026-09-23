@@ -17,12 +17,16 @@ vendorProfileRouter.post(
   body('label').isString().trim().notEmpty(),
   body('line1').isString().trim().notEmpty(),
   body('line2').optional().isString().trim(),
+  body('lat').optional().isFloat(),
+  body('lng').optional().isFloat(),
   handleValidation,
   asyncHandler(ctrl.addAddress),
 );
 vendorProfileRouter.patch(
   '/addresses/:addressId',
   param('addressId').isString().notEmpty(),
+  body('lat').optional().isFloat(),
+  body('lng').optional().isFloat(),
   handleValidation,
   asyncHandler(ctrl.updateAddress),
 );
@@ -49,3 +53,45 @@ vendorProfileRouter.patch(
 
 vendorProfileRouter.get('/notification-prefs', asyncHandler(ctrl.getNotificationPrefs));
 vendorProfileRouter.patch('/notification-prefs', asyncHandler(ctrl.updateNotificationPrefs));
+
+vendorProfileRouter.get('/documents/additional', asyncHandler(ctrl.listAdditionalDocuments));
+vendorProfileRouter.post(
+  '/documents/additional',
+  body('name').isString().trim().notEmpty(),
+  body('url').isString().trim().notEmpty(),
+  handleValidation,
+  asyncHandler(ctrl.addAdditionalDocument),
+);
+vendorProfileRouter.delete(
+  '/documents/additional/:documentId',
+  param('documentId').isString().notEmpty(),
+  handleValidation,
+  asyncHandler(ctrl.removeAdditionalDocument),
+);
+
+vendorProfileRouter.get(
+  '/bank-details/request',
+  asyncHandler(ctrl.getBankDetailsRequestStatus),
+);
+vendorProfileRouter.post(
+  '/bank-details/request',
+  body('accountHolderName').isString().trim().notEmpty(),
+  body('accountNumber').isString().trim().notEmpty(),
+  body('ifsc').isString().trim().notEmpty(),
+  body('bankName').optional().isString().trim(),
+  body('branch').optional().isString().trim(),
+  body('accountType').isString().trim().notEmpty(),
+  body('upiId').optional().isString().trim(),
+  handleValidation,
+  asyncHandler(ctrl.requestBankDetailsChange),
+);
+
+vendorProfileRouter.get('/settlements', asyncHandler(ctrl.getSettlements));
+
+vendorProfileRouter.get('/payments/batches', asyncHandler(ctrl.getPayoutBatches));
+vendorProfileRouter.get(
+  '/payments/batches/:id',
+  param('id').isMongoId(),
+  handleValidation,
+  asyncHandler(ctrl.getPayoutBatch),
+);

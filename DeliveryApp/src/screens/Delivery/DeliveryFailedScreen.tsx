@@ -1,14 +1,38 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'DeliveryFailed'>;
 
+function formatTime(iso?: string): string | null {
+  if (!iso) return null;
+  return new Date(iso).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+}
+
 export function DeliveryFailedScreen({route, navigation}: Props) {
-  const {orderId} = route.params;
+  const {orderId, order: passedOrder} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(passedOrder ?? null);
+
+  useEffect(() => {
+    if (passedOrder) return;
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, passedOrder, getOrder]);
+
+  const customerName = order?.address.contactName ?? 'Customer';
+  const updatedAt = formatTime(order?.updatedAt);
 
   return (
     <Screen edges={['top', 'bottom']}>
@@ -20,7 +44,7 @@ export function DeliveryFailedScreen({route, navigation}: Props) {
           </View>
         </View>
         <Text style={styles.headerTitle}>Delivery Failed</Text>
-        <Text style={styles.headerSubtitle}>Order #{orderId}</Text>
+        <Text style={styles.headerSubtitle}>Order #{order?.orderNumber ?? orderId}</Text>
       </View>
 
       <ScrollView style={styles.flex} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
@@ -28,56 +52,21 @@ export function DeliveryFailedScreen({route, navigation}: Props) {
           <Text style={styles.cardLabel}>FAILURE SUMMARY</Text>
           <View style={styles.row}>
             <Text style={styles.rowLabel}>Customer</Text>
-            <Text style={styles.rowValue}>Priya Mehta — unreachable</Text>
+            <Text style={styles.rowValue}>{`${customerName} — unreachable`}</Text>
           </View>
           <View style={styles.row}>
-            <Text style={styles.rowLabel}>Attempts</Text>
-            <Text style={styles.rowValue}>3 calls, 2 messages, 10 min wait</Text>
+            <Text style={styles.rowLabel}>Status</Text>
+            <Text style={styles.rowValueGreen}>Order cancelled</Text>
           </View>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Time</Text>
-            <Text style={styles.rowValue}>3:12 PM</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Evidence</Text>
-            <Text style={styles.rowValueGreen}>2 photos submitted</Text>
-          </View>
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>EARNINGS SUMMARY</Text>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Guaranteed</Text>
-            <Text style={styles.rowValueGreen}>₹40</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Missed (on completion)</Text>
-            <Text style={styles.rowValueRed}>- ₹42</Text>
-          </View>
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Total credited</Text>
-            <Text style={styles.totalValue}>₹40</Text>
-          </View>
-        </View>
-
-        <View style={styles.impactCard}>
-          <Text style={styles.impactLabel}>Impact on stats</Text>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Acceptance rate</Text>
-            <Text style={styles.rowValue}>No change</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Completion rate</Text>
-            <Text style={styles.rowValue}>Will NOT count against you</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Customer rating</Text>
-            <Text style={styles.rowValue}>No impact</Text>
-          </View>
+          {!!updatedAt && (
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Time</Text>
+              <Text style={styles.rowValue}>{updatedAt}</Text>
+            </View>
+          )}
         </View>
 
         <Button label="Return Order" onPress={() => navigation.navigate('ReturnOrder', {orderId})} />
-        <Button label="View Issue Report" variant="secondary" onPress={() => navigation.goBack()} />
         <TouchableOpacity onPress={() => navigation.navigate('IssueSupportContact', {orderId})}>
           <Text style={styles.supportLink}>Support</Text>
         </TouchableOpacity>
@@ -100,11 +89,5 @@ const styles = StyleSheet.create({
   rowLabel: {...typography.label, fontSize: 13, color: colors.textSecondary},
   rowValue: {...typography.bodyMedium, fontSize: 13, color: colors.textPrimary},
   rowValueGreen: {...typography.bodySemibold, fontSize: 13, color: colors.primary},
-  rowValueRed: {...typography.bodyMedium, fontSize: 13, color: colors.danger},
-  totalRow: {flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm, marginTop: spacing.xs},
-  totalLabel: {...typography.bodySemibold, fontSize: 14, color: colors.textPrimary},
-  totalValue: {...typography.bodyBold, fontSize: 15, color: colors.textPrimary},
-  impactCard: {backgroundColor: colors.warningSurface, borderWidth: 1, borderColor: colors.warning, borderRadius: radius.lg, padding: spacing.lg},
-  impactLabel: {...typography.labelSemibold, fontSize: 13, color: colors.warningText, marginBottom: spacing.sm},
   supportLink: {...typography.bodyMedium, fontSize: 15, color: colors.textSecondary, textAlign: 'center'},
 });

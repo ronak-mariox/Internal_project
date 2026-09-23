@@ -1,11 +1,12 @@
 import React from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
-import { useProfile, DocumentStatus } from '../../context/ProfileContext';
+import { useProfile, DocumentStatus, type ProfileDocument, type AdditionalDocument } from '../../context/ProfileContext';
 import { Badge, BadgeTone, Button, NavHeader } from '../../components';
 import { Icon } from '../../icons/Icon';
+import { resolveAssetUrl } from '../../utils/resolveAssetUrl';
 import { colors, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'ProfileDocuments'>;
@@ -23,7 +24,7 @@ const STATUS_TONE: Record<DocumentStatus, BadgeTone> = {
 };
 
 export function ProfileDocumentsScreen({ navigation }: Props) {
-  const { documents } = useProfile();
+  const { documents, additionalDocuments, removeAdditionalDocument } = useProfile();
 
   const total = documents.length;
   const verifiedCount = documents.filter(d => d.status === 'verified').length;
@@ -31,11 +32,34 @@ export function ProfileDocumentsScreen({ navigation }: Props) {
   const allVerified = total > 0 && verifiedCount === total;
 
   function handleAddDocument() {
-    Alert.alert('Add Document', 'Coming soon.');
+    navigation.navigate('ProfileAddDocument');
   }
 
-  function handleDownload() {
-    Alert.alert('Download', 'Coming soon.');
+  function handleDownload(doc: ProfileDocument) {
+    if (!doc.url) {
+      Alert.alert('Not available', 'This document has not been uploaded yet.');
+      return;
+    }
+    Linking.openURL(resolveAssetUrl(doc.url));
+  }
+
+  function handleDownloadAdditional(doc: AdditionalDocument) {
+    Linking.openURL(resolveAssetUrl(doc.url));
+  }
+
+  function handleRemoveAdditional(doc: AdditionalDocument) {
+    Alert.alert('Remove Document', `Remove "${doc.name}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () => {
+          removeAdditionalDocument(doc.id).catch(() => {
+            Alert.alert('Error', 'Could not remove document. Please try again.');
+          });
+        },
+      },
+    ]);
   }
 
   return (
@@ -90,13 +114,55 @@ export function ProfileDocumentsScreen({ navigation }: Props) {
                 >
                   <Icon name="eye" size={14} color={colors.primaryDark} />
                 </Pressable>
-                <Pressable style={styles.iconButton} onPress={handleDownload} hitSlop={6}>
+                <Pressable style={styles.iconButton} onPress={() => handleDownload(doc)} hitSlop={6}>
                   <Icon name="file-text" size={14} color={colors.primaryDark} />
                 </Pressable>
               </View>
             </View>
           ))}
         </View>
+
+        {additionalDocuments.length > 0 ? (
+          <>
+            <Text style={styles.sectionHeader}>Additional Documents</Text>
+            <View style={styles.listCard}>
+              {additionalDocuments.map((doc, index) => (
+                <View
+                  key={doc.id}
+                  style={[styles.row, index < additionalDocuments.length - 1 && styles.rowDivider]}
+                >
+                  <View style={styles.fileIcon}>
+                    <Icon name="file-text" size={18} color={colors.primary} />
+                  </View>
+                  <View style={styles.rowText}>
+                    <Text style={styles.docName} numberOfLines={1}>
+                      {doc.name}
+                    </Text>
+                    <Text style={styles.docMeta} numberOfLines={1}>
+                      {doc.uploadedLabel}
+                    </Text>
+                  </View>
+                  <View style={styles.rowActions}>
+                    <Pressable
+                      style={styles.iconButton}
+                      onPress={() => handleDownloadAdditional(doc)}
+                      hitSlop={6}
+                    >
+                      <Icon name="file-text" size={14} color={colors.primaryDark} />
+                    </Pressable>
+                    <Pressable
+                      style={styles.iconButton}
+                      onPress={() => handleRemoveAdditional(doc)}
+                      hitSlop={6}
+                    >
+                      <Icon name="trash" size={14} color={colors.error} />
+                    </Pressable>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </>
+        ) : null}
 
         <View style={styles.footer}>
           <Button
@@ -165,6 +231,15 @@ const styles = StyleSheet.create({
   listCard: {
     marginTop: spacing.xl,
     backgroundColor: colors.white,
+  },
+  sectionHeader: {
+    ...typography.tinyBold,
+    color: colors.textSecondary,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.xxl,
+    paddingBottom: spacing.sm,
   },
   row: {
     flexDirection: 'row',

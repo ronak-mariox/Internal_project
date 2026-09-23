@@ -8,6 +8,12 @@ import { upload } from '../lib/upload';
 import { asyncHandler } from '../utils/asyncHandler';
 import { env } from '../lib/env';
 import * as driverController from '../controllers/driverController';
+import { driverOrderRouter } from './driverOrders';
+import { driverEarningsRouter } from './driverEarnings';
+import { driverIncentiveRouter } from './driverIncentives';
+import { driverPerformanceRouter } from './driverPerformance';
+import { driverNotificationRouter } from './driverNotifications';
+import { driverEmergencyRouter } from './driverEmergency';
 
 export const driverRouter = Router();
 
@@ -31,6 +37,11 @@ const otpValidator = body('otp')
   .isNumeric()
   .withMessage(`OTP must be ${env.otpLength} digits`);
 
+// Lets the client say whether this OTP verification is a login attempt or part of the
+// registration flow. Defaults to 'register' when omitted, matching the historical
+// behaviour of always auto-creating a driver on first verify.
+const intentValidator = body('intent').optional().isIn(['login', 'register']).withMessage('Invalid intent');
+
 driverRouter.post(
   '/auth/otp/request',
   otpRequestLimiter,
@@ -43,6 +54,7 @@ driverRouter.post(
   '/auth/otp/verify',
   phoneValidator,
   otpValidator,
+  intentValidator,
   handleValidation,
   asyncHandler(driverController.verifyOtp),
 );
@@ -56,6 +68,19 @@ driverRouter.post(
   upload.single('avatar'),
   asyncHandler(driverController.uploadAvatar),
 );
+
+driverRouter.patch(
+  '/status',
+  authenticate,
+  authorize('driver'),
+  body('isOnline').isBoolean(),
+  body('lat').optional().isFloat(),
+  body('lng').optional().isFloat(),
+  handleValidation,
+  asyncHandler(driverController.updateStatus),
+);
+
+driverRouter.get('/home-summary', authenticate, authorize('driver'), asyncHandler(driverController.getHomeSummary));
 
 // ---------------------------------------------------------------------------
 // Multi-step registration — mirrors DeliveryApp's Registration wizard.
@@ -155,3 +180,9 @@ registrationRouter.get('/status', asyncHandler(driverController.getStatus));
 registrationRouter.post('/submit', asyncHandler(driverController.submit));
 
 driverRouter.use('/registration', registrationRouter);
+driverRouter.use('/orders', driverOrderRouter);
+driverRouter.use('/earnings', driverEarningsRouter);
+driverRouter.use('/incentives', driverIncentiveRouter);
+driverRouter.use('/performance', driverPerformanceRouter);
+driverRouter.use('/notifications', driverNotificationRouter);
+driverRouter.use('/emergency', driverEmergencyRouter);

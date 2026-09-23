@@ -1,18 +1,44 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Icon} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CallingException'>;
 
 const QUICK_MESSAGES = ['I\'m outside', 'Please come down', 'Where to leave it?'];
 
+function initialsFor(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  return parts
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join('');
+}
+
 export function CallingExceptionScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
   const [muted, setMuted] = useState(false);
   const [speakerOn, setSpeakerOn] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
+
+  const customerName = order?.address.contactName ?? 'Customer';
 
   return (
     <View style={styles.container}>
@@ -21,9 +47,9 @@ export function CallingExceptionScreen({route, navigation}: Props) {
           <Text style={styles.exceptionBadgeText}>Delivery exception call</Text>
         </View>
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>PM</Text>
+          <Text style={styles.avatarText}>{initialsFor(customerName)}</Text>
         </View>
-        <Text style={styles.callingText}>Calling Priya Mehta…</Text>
+        <Text style={styles.callingText}>{`Calling ${customerName}…`}</Text>
         <View style={styles.dots}>
           <View style={[styles.dot, styles.dotDim]} />
           <View style={[styles.dot, styles.dotMid]} />
@@ -33,10 +59,8 @@ export function CallingExceptionScreen({route, navigation}: Props) {
 
       <View style={styles.contextCard}>
         <Text style={styles.contextLabel}>ORDER CONTEXT</Text>
-        <Text style={styles.contextOrder}>#{orderId}</Text>
-        <Text style={styles.contextAddress}>HSR Layout Sector 2</Text>
-        <View style={styles.contextDivider} />
-        <Text style={styles.contextAttempt}>Attempt 1 of 3 · If no answer, try messaging</Text>
+        <Text style={styles.contextOrder}>#{order?.orderNumber ?? orderId}</Text>
+        {!!order?.address.city && <Text style={styles.contextAddress}>{order.address.city}</Text>}
       </View>
 
       <View style={styles.quickBlock}>

@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React from 'react';
 import {ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
@@ -7,17 +7,14 @@ import {colors, radius, spacing, typography} from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'DeliveryVerification'>;
 
-type MethodId = 'otp' | 'photo' | 'signature';
-
-const METHODS: {id: MethodId; icon: IconName; title: string; subtitle: string}[] = [
-  {id: 'otp', icon: 'smartphone', title: 'Customer OTP', subtitle: 'Ask customer for their 4-digit code'},
-  {id: 'photo', icon: 'camera', title: 'Photo Proof', subtitle: 'Take a photo at delivery point'},
-  {id: 'signature', icon: 'edit', title: 'Digital Signature', subtitle: 'Customer signs on screen'},
+const METHODS: {icon: IconName; title: string; subtitle: string; available: boolean}[] = [
+  {icon: 'smartphone', title: 'Customer OTP', subtitle: "Ask customer for their 4-digit code", available: true},
+  {icon: 'camera', title: 'Photo Proof', subtitle: 'Coming soon', available: false},
+  {icon: 'edit', title: 'Digital Signature', subtitle: 'Coming soon', available: false},
 ];
 
 export function DeliveryVerificationScreen({route, navigation}: Props) {
   const {orderId} = route.params;
-  const [selected, setSelected] = useState<MethodId>('otp');
 
   return (
     <Screen edges={['top', 'bottom']}>
@@ -33,13 +30,11 @@ export function DeliveryVerificationScreen({route, navigation}: Props) {
         </View>
 
         {METHODS.map(method => {
-          const isSelected = method.id === selected;
+          const isSelected = method.available;
           return (
-            <TouchableOpacity
-              key={method.id}
-              style={[styles.methodRow, isSelected && styles.methodRowSelected]}
-              activeOpacity={0.85}
-              onPress={() => setSelected(method.id)}>
+            <View
+              key={method.title}
+              style={[styles.methodRow, isSelected && styles.methodRowSelected, !method.available && styles.methodRowDisabled]}>
               <View style={[styles.methodIcon, isSelected && styles.methodIconSelected]}>
                 <Icon name={method.icon} size={22} color={isSelected ? colors.primary : colors.textSecondary} />
               </View>
@@ -50,7 +45,7 @@ export function DeliveryVerificationScreen({route, navigation}: Props) {
               <View style={[styles.radio, isSelected && styles.radioSelected]}>
                 {isSelected && <Icon name="check" size={12} color={colors.white} />}
               </View>
-            </TouchableOpacity>
+            </View>
           );
         })}
 
@@ -86,6 +81,7 @@ const styles = StyleSheet.create({
   infoText: {...typography.label, color: colors.primary, flex: 1},
   methodRow: {flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.xl, padding: spacing.lg},
   methodRowSelected: {borderWidth: 2, borderColor: colors.primary, backgroundColor: colors.primarySurfaceAlt},
+  methodRowDisabled: {opacity: 0.5},
   methodIcon: {width: 48, height: 48, borderRadius: radius.lg, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center'},
   methodIconSelected: {backgroundColor: colors.successSurface},
   methodText: {flex: 1},

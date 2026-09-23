@@ -1,117 +1,114 @@
-import React from 'react';
-import {ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import React, {useEffect, useState} from 'react';
+import {Alert, ScrollView, StyleSheet, Text, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
-import {Button, Icon, Screen} from '../../components';
+import {Button, Icon, IconBackButton, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
+import {getApiErrorMessage} from '../../services/api';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CannotComplete'>;
 
 export function CannotCompleteScreen({route, navigation}: Props) {
   const {orderId} = route.params;
-  const goHome = () => navigation.reset({index: 0, routes: [{name: 'Home'}]});
+  const {getOrder, reportIssue} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId).then((o) => { if (!cancelled) setOrder(o); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [orderId, getOrder]);
+
+  const handleConfirm = async () => {
+    setSubmitting(true);
+    try {
+      const result = await reportIssue(orderId, {type: 'delivery_failed', description: 'Delivery could not be completed'});
+      navigation.navigate('DeliveryFailed', {orderId, order: result.order});
+    } catch (err) {
+      Alert.alert('Could Not Report', getApiErrorMessage(err, 'Please try again.'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <Screen edges={['top', 'bottom']}>
       <View style={styles.header}>
-        <View style={styles.headerIcon}>
-          <Icon name="x" size={26} color={colors.white} />
+        <IconBackButton onPress={() => navigation.goBack()} tone="dark" />
+        <View style={styles.headerText}>
+          <Text style={styles.headerTitle}>Cannot Complete Delivery</Text>
+          <Text style={styles.headerSubtitle}>{`Order #${order?.orderNumber ?? orderId}${order?.address.contactName ? ` · ${order.address.contactName}` : ''}`}</Text>
         </View>
-        <Text style={styles.headerTitle}>Delivery Cannot Be Completed</Text>
-        <Text style={styles.headerSubtitle}>Order #{orderId} — Priya Mehta</Text>
       </View>
 
       <ScrollView style={styles.flex} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>SUMMARY OF ATTEMPTS</Text>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Attempts</Text>
-            <Text style={styles.rowValue}>3 calls, 2 messages, 10 min wait</Text>
+        <View style={styles.optionCard}>
+          <View style={styles.optionRow}>
+            <View style={styles.optionIcon}>
+              <Icon name="store" size={20} color={colors.primary} />
+            </View>
+            <View style={styles.optionText}>
+              <Text style={styles.optionTitle}>Return to store</Text>
+              <Text style={styles.optionSubtitle}>Take the order back to the vendor</Text>
+            </View>
           </View>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Address verified</Text>
-            <Icon name="check" size={16} color={colors.primary} />
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Customer unreachable</Text>
-            <Icon name="check" size={16} color={colors.primary} />
-          </View>
+          <Button label="Return to store" onPress={() => navigation.navigate('ReturnOrder', {orderId})} />
         </View>
 
-        <Text style={styles.sectionLabel}>What would you like to do?</Text>
-
-        <TouchableOpacity
-          style={styles.primaryOption}
-          activeOpacity={0.85}
-          onPress={() => navigation.navigate('ReturnOrder', {orderId})}>
-          <Icon name="refresh" size={22} color={colors.primary} />
-          <View style={styles.optionText}>
-            <Text style={styles.primaryOptionTitle}>Return to store</Text>
-            <Text style={styles.optionSubtitle}>Required for food/perishables — Recommended</Text>
+        <View style={styles.optionCard}>
+          <View style={styles.optionRow}>
+            <View style={styles.optionIcon}>
+              <Icon name="map-pin" size={20} color={colors.primary} />
+            </View>
+            <View style={styles.optionText}>
+              <Text style={styles.optionTitle}>Safe drop at location</Text>
+              <Text style={styles.optionSubtitle}>Leave the order at a safe spot, if allowed</Text>
+            </View>
           </View>
-          <View style={styles.recTag}>
-            <Text style={styles.recTagText}>REC</Text>
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.secondaryOption}
-          activeOpacity={0.85}
-          onPress={() => navigation.navigate('DeliverySuccess', {orderId})}>
-          <Icon name="map-pin" size={22} color={colors.textPrimary} />
-          <View style={styles.optionText}>
-            <Text style={styles.secondaryOptionTitle}>Safe drop at location</Text>
-            <Text style={styles.optionSubtitle}>Only if permitted by order</Text>
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.secondaryOption}
-          activeOpacity={0.85}
-          onPress={() => navigation.navigate('ReportIssue', {orderId})}>
-          <Icon name="alert-circle" size={22} color={colors.textPrimary} />
-          <View style={styles.optionText}>
-            <Text style={styles.secondaryOptionTitle}>Escalate — Support takes over</Text>
-            <Text style={styles.optionSubtitle}>Support will handle this order</Text>
-          </View>
-        </TouchableOpacity>
-
-        <View style={styles.protectionBanner}>
-          <Text style={styles.protectionLabel}>Earnings protection</Text>
-          <Text style={styles.protectionAmount}>Guaranteed partial earnings: ₹40</Text>
-          <Text style={styles.protectionNote}>Full earnings if customer cancellation confirmed</Text>
+          <Button label="Safe drop at location" variant="secondary" onPress={() => navigation.navigate('DeliverySuccess', {orderId})} />
         </View>
 
-        <Button label="Confirm Cannot Complete" variant="outline" style={styles.confirmButton} textColor={colors.danger} onPress={goHome} />
+        <View style={styles.optionCard}>
+          <View style={styles.optionRow}>
+            <View style={styles.optionIcon}>
+              <Icon name="headphones" size={20} color={colors.primary} />
+            </View>
+            <View style={styles.optionText}>
+              <Text style={styles.optionTitle}>Escalate — Support takes over</Text>
+              <Text style={styles.optionSubtitle}>Report a different issue for this order</Text>
+            </View>
+          </View>
+          <Button label="Escalate to support" variant="secondary" onPress={() => navigation.navigate('ReportIssue', {orderId})} />
+        </View>
       </ScrollView>
+
+      <View style={styles.footer}>
+        <Button
+          label={submitting ? 'Reporting…' : 'Confirm Cannot Complete'}
+          style={styles.dangerButton}
+          disabled={submitting}
+          onPress={handleConfirm}
+        />
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {backgroundColor: colors.dark800, alignItems: 'center', gap: spacing.xs, paddingTop: spacing.xxl, paddingBottom: spacing.xl, paddingHorizontal: spacing.xl},
-  headerIcon: {width: 52, height: 52, borderRadius: 26, borderWidth: 2, borderColor: colors.white, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.xs},
-  headerTitle: {...typography.h4, fontSize: 20, color: colors.white, textAlign: 'center'},
-  headerSubtitle: {...typography.body, color: '#D1D5DB'},
+  header: {backgroundColor: colors.danger, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.lg},
+  headerText: {flex: 1},
+  headerTitle: {...typography.title, fontSize: 17, color: colors.white},
+  headerSubtitle: {...typography.caption, color: 'rgba(255,255,255,0.85)'},
   flex: {flex: 1},
   body: {padding: spacing.lg, gap: spacing.md},
-  card: {backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.md},
-  cardLabel: {...typography.captionMedium, fontSize: 12, color: colors.textSecondary, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: spacing.sm},
-  row: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing.xxs},
-  rowLabel: {...typography.label, color: colors.textSecondary},
-  rowValue: {...typography.label, fontWeight: '500', color: colors.textPrimary},
-  sectionLabel: {...typography.bodySemibold, fontSize: 14, color: colors.textPrimary},
-  primaryOption: {flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.primarySurface, borderWidth: 2, borderColor: colors.primary, borderRadius: radius.lg, padding: spacing.lg},
-  secondaryOption: {flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.lg},
+  optionCard: {backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.md, gap: spacing.sm},
+  optionRow: {flexDirection: 'row', alignItems: 'center', gap: spacing.md},
+  optionIcon: {width: 40, height: 40, borderRadius: radius.md, backgroundColor: colors.primarySurface, alignItems: 'center', justifyContent: 'center'},
   optionText: {flex: 1},
-  primaryOptionTitle: {...typography.bodyLgMedium, fontSize: 15, color: '#13845A'},
-  secondaryOptionTitle: {...typography.bodyMedium, fontSize: 15, color: colors.textPrimary},
+  optionTitle: {...typography.bodySemibold, fontSize: 14, color: colors.textPrimary},
   optionSubtitle: {...typography.caption, fontSize: 12, color: colors.textSecondary, marginTop: 1},
-  recTag: {backgroundColor: colors.primary, borderRadius: 6, paddingHorizontal: spacing.sm, paddingVertical: 3},
-  recTagText: {...typography.captionSemibold, fontSize: 11, color: colors.white},
-  protectionBanner: {backgroundColor: colors.warningSurface, borderWidth: 1, borderColor: colors.warning, borderRadius: radius.md, padding: spacing.lg},
-  protectionLabel: {...typography.labelSemibold, fontSize: 13, color: colors.warningText},
-  protectionAmount: {...typography.bodyBold, fontSize: 15, color: colors.textPrimary, marginTop: spacing.xs},
-  protectionNote: {...typography.label, fontSize: 13, color: colors.textSecondary, marginTop: 2},
-  confirmButton: {borderColor: colors.danger},
+  footer: {padding: spacing.lg, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border},
+  dangerButton: {backgroundColor: colors.danger},
 });

@@ -68,7 +68,7 @@ export function SettlementNotificationScreen({ navigation, route }: Props) {
             <DetailCard>
               <DetailRow label="Settlement ID" value={settlement.id} />
               <DetailRow label="Period" value={settlement.dateRangeLabel} />
-              <DetailRow label="Bank Account" value={settlement.bankAccountLabel} />
+              <DetailRow label="Bank Account" value={settlement.bankAccountLabel ?? '—'} />
             </DetailCard>
 
             <DetailCard title="Settlement Details">

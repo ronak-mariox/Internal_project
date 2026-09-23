@@ -1,9 +1,11 @@
 import React, {useState} from 'react';
-import {StyleSheet, Text, TextInput, TouchableOpacity, View} from 'react-native';
+import {Alert, StyleSheet, Text, TextInput, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, IconBackButton, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {useOrders} from '../../context/OrdersContext';
+import {getApiErrorMessage} from '../../services/api';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RejectReason'>;
 
@@ -18,10 +20,23 @@ const REASONS = [
 
 export function RejectReasonScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {rejectOrder} = useOrders();
   const [selected, setSelected] = useState('too-far');
   const [notes, setNotes] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const selectedReason = REASONS.find(r => r.id === selected);
+
+  const handleConfirm = async () => {
+    setSubmitting(true);
+    try {
+      await rejectOrder(orderId, notes.trim() ? `${selected}: ${notes.trim()}` : selected);
+      navigation.replace('OrderRejected', {orderId, reason: selectedReason?.title ?? 'Other reason'});
+    } catch (err) {
+      Alert.alert('Could not reject order', getApiErrorMessage(err, 'Please try again.'));
+      setSubmitting(false);
+    }
+  };
 
   return (
     <Screen backgroundColor={colors.background} edges={['top', 'bottom']} keyboardAvoiding>
@@ -70,11 +85,12 @@ export function RejectReasonScreen({route, navigation}: Props) {
       </View>
 
       <View style={styles.footer}>
-        <Button label="Back" variant="secondary" style={styles.backButton} onPress={() => navigation.goBack()} />
+        <Button label="Back" variant="secondary" style={styles.backButton} onPress={() => navigation.goBack()} disabled={submitting} />
         <Button
           label="Confirm Rejection"
           style={styles.confirmButton}
-          onPress={() => navigation.replace('OrderRejected', {orderId, reason: selectedReason?.title ?? 'Other reason'})}
+          loading={submitting}
+          onPress={handleConfirm}
         />
       </View>
     </Screen>

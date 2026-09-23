@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
@@ -7,9 +7,14 @@ import { Icon } from '../../icons/Icon';
 import { useStoreSetup } from '../../context/StoreSetupContext';
 import { useRegistration } from '../../context/RegistrationContext';
 import { api, getApiErrorMessage } from '../../services/api';
+import { isPositiveNumber, isRequired, type FormErrors } from '../../utils/validators';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'StoreProfile'>;
+
+type Errors = FormErrors<
+  'storeName' | 'description' | 'primaryCategory' | 'subCategory' | 'tags' | 'minimumOrderValue' | 'avgPrepTime'
+>;
 
 const CATEGORIES = ['Grocery & Essentials', 'Electronics', 'Fashion', 'Health & Beauty', 'Home & Kitchen'];
 const SUB_CATEGORIES = ['Kirana / General Store', 'Supermarket', 'Organic Store', 'Wholesale'];
@@ -30,14 +35,15 @@ export function StoreProfileScreen({ navigation }: Props) {
     data.profile?.primaryCategory ?? registrationData.businessInfo?.category ?? '',
   );
   const [subCategory, setSubCategory] = useState(data.profile?.subCategory ?? '');
-  const [tags, setTags] = useState<string[]>(
-    data.profile?.tags ?? ['Grocery', 'Fresh Produce', 'Daily Essentials', 'Home Delivery'],
+  const [tags, setTags] = useState<string[]>(() =>
+    Array.from(new Set(data.profile?.tags ?? ['Grocery', 'Fresh Produce', 'Daily Essentials', 'Home Delivery'])),
   );
   const [newTag, setNewTag] = useState('');
   const [addingTag, setAddingTag] = useState(false);
+  const committingTagRef = useRef(false);
   const [minimumOrderValue, setMinimumOrderValue] = useState(data.profile?.minimumOrderValue ?? '150');
   const [avgPrepTime, setAvgPrepTime] = useState(data.profile?.avgPrepTime ?? '30');
-  const [error, setError] = useState<string | undefined>();
+  const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
 
   function removeTag(tag: string) {
@@ -45,28 +51,32 @@ export function StoreProfileScreen({ navigation }: Props) {
   }
 
   function commitTag() {
+    if (committingTagRef.current) return;
+    committingTagRef.current = true;
     const trimmed = newTag.trim();
-    if (trimmed && !tags.includes(trimmed)) {
-      setTags(prev => [...prev, trimmed]);
-    }
+    setTags(prev => (trimmed && !prev.includes(trimmed) ? [...prev, trimmed] : prev));
+    if (trimmed) setErrors(prev => (prev.tags ? { ...prev, tags: undefined } : prev));
     setNewTag('');
     setAddingTag(false);
   }
 
+  function startAddingTag() {
+    committingTagRef.current = false;
+    setAddingTag(true);
+  }
+
   async function handleContinue() {
-    if (
-      !storeName.trim() ||
-      !description.trim() ||
-      !primaryCategory ||
-      !subCategory ||
-      tags.length === 0 ||
-      !minimumOrderValue.trim() ||
-      !avgPrepTime.trim()
-    ) {
-      setError('Please fill in all required fields');
-      return;
-    }
-    setError(undefined);
+    const nextErrors: Errors = {};
+    if (!isRequired(storeName)) nextErrors.storeName = 'Store name is required';
+    if (!isRequired(description)) nextErrors.description = 'Store description is required';
+    if (!isRequired(primaryCategory)) nextErrors.primaryCategory = 'Select a primary category';
+    if (!isRequired(subCategory)) nextErrors.subCategory = 'Select a sub-category';
+    if (tags.length === 0) nextErrors.tags = 'Add at least one tag';
+    if (!isPositiveNumber(minimumOrderValue)) nextErrors.minimumOrderValue = 'Enter a valid amount';
+    if (!isPositiveNumber(avgPrepTime)) nextErrors.avgPrepTime = 'Enter a valid duration';
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+
     const profile = {
       storeName: storeName.trim(),
       description: description.trim(),
@@ -82,7 +92,7 @@ export function StoreProfileScreen({ navigation }: Props) {
       updateProfile(profile);
       navigation.navigate('StoreLogoUpload');
     } catch (err) {
-      setError(getApiErrorMessage(err));
+      setErrors({ form: getApiErrorMessage(err) });
     } finally {
       setSaving(false);
     }
@@ -103,26 +113,34 @@ export function StoreProfileScreen({ navigation }: Props) {
             label="Store Name"
             required
             value={storeName}
-            onChangeText={setStoreName}
+            onChangeText={text => {
+              setStoreName(text);
+              if (errors.storeName) setErrors(prev => ({ ...prev, storeName: undefined }));
+            }}
             placeholder="Sharma Kirana Store"
             helperText="Displayed to customers on Verdant"
+            error={errors.storeName}
           />
 
           <View style={styles.gap}>
             <Text style={styles.label}>
               Store Description <Text style={styles.required}>*</Text>
             </Text>
-            <View style={styles.textareaWrapper}>
+            <View style={[styles.textareaWrapper, errors.description ? styles.textareaError : null]}>
               <TextInput
                 style={styles.textarea}
                 value={description}
-                onChangeText={text => setDescription(text.slice(0, DESCRIPTION_MAX))}
+                onChangeText={text => {
+                  setDescription(text.slice(0, DESCRIPTION_MAX));
+                  if (errors.description) setErrors(prev => ({ ...prev, description: undefined }));
+                }}
                 multiline
                 textAlignVertical="top"
                 placeholder="Tell customers about your store"
                 placeholderTextColor={colors.textTertiary}
               />
             </View>
+            {errors.description ? <Text style={styles.errorText}>{errors.description}</Text> : null}
             <Text style={styles.charCount}>
               {description.length} / {DESCRIPTION_MAX}
             </Text>
@@ -133,13 +151,22 @@ export function StoreProfileScreen({ navigation }: Props) {
             required
             value={primaryCategory}
             options={CATEGORIES}
-            onChange={setPrimaryCategory}
+            onChange={value => {
+              setPrimaryCategory(value);
+              if (errors.primaryCategory) setErrors(prev => ({ ...prev, primaryCategory: undefined }));
+            }}
+            error={errors.primaryCategory}
           />
           <SelectField
             label="Sub-category"
+            required
             value={subCategory}
             options={SUB_CATEGORIES}
-            onChange={setSubCategory}
+            onChange={value => {
+              setSubCategory(value);
+              if (errors.subCategory) setErrors(prev => ({ ...prev, subCategory: undefined }));
+            }}
+            error={errors.subCategory}
           />
         </FormSectionCard>
 
@@ -160,18 +187,23 @@ export function StoreProfileScreen({ navigation }: Props) {
                 onChangeText={setNewTag}
                 onSubmitEditing={commitTag}
                 onBlur={commitTag}
+                blurOnSubmit={false}
                 autoFocus
                 placeholder="Tag name"
                 placeholderTextColor={colors.textTertiary}
               />
             ) : (
-              <Pressable style={styles.addTagButton} onPress={() => setAddingTag(true)}>
+              <Pressable style={styles.addTagButton} onPress={startAddingTag}>
                 <Icon name="plus" size={12} color={colors.textSecondary} />
                 <Text style={styles.addTagText}>Add tag</Text>
               </Pressable>
             )}
           </View>
-          <Text style={styles.helperText}>Tags help customers find your store in search results</Text>
+          {errors.tags ? (
+            <Text style={styles.errorText}>{errors.tags}</Text>
+          ) : (
+            <Text style={styles.helperText}>Tags help customers find your store in search results</Text>
+          )}
         </FormSectionCard>
 
         <FormSectionCard title="Order Settings">
@@ -180,24 +212,32 @@ export function StoreProfileScreen({ navigation }: Props) {
               <Input
                 label="Minimum Order Value"
                 value={minimumOrderValue}
-                onChangeText={text => setMinimumOrderValue(text.replace(/[^0-9]/g, ''))}
+                onChangeText={text => {
+                  setMinimumOrderValue(text.replace(/[^0-9]/g, ''));
+                  if (errors.minimumOrderValue) setErrors(prev => ({ ...prev, minimumOrderValue: undefined }));
+                }}
                 keyboardType="number-pad"
                 placeholder="150"
+                error={errors.minimumOrderValue}
               />
             </View>
             <View style={styles.rowItem}>
               <Input
                 label="Avg. Prep Time (min)"
                 value={avgPrepTime}
-                onChangeText={text => setAvgPrepTime(text.replace(/[^0-9]/g, ''))}
+                onChangeText={text => {
+                  setAvgPrepTime(text.replace(/[^0-9]/g, ''));
+                  if (errors.avgPrepTime) setErrors(prev => ({ ...prev, avgPrepTime: undefined }));
+                }}
                 keyboardType="number-pad"
                 placeholder="30"
+                error={errors.avgPrepTime}
               />
             </View>
           </View>
         </FormSectionCard>
 
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {errors.form ? <Text style={styles.errorText}>{errors.form}</Text> : null}
 
         <View style={styles.footer}>
           <Button label="Save & Continue" onPress={handleContinue} loading={saving} />
@@ -240,6 +280,10 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: radii.md,
     padding: spacing.lg,
+  },
+  textareaError: {
+    borderColor: colors.error,
+    backgroundColor: colors.errorSurface,
   },
   textarea: {
     ...typography.body,

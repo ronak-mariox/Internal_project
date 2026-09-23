@@ -76,6 +76,29 @@ export interface VendorAddressData {
   line1: string;
   line2?: string;
   isPrimary: boolean;
+  lat?: number;
+  lng?: number;
+}
+
+/** Arbitrary KYC/supporting documents beyond the fixed businessProof/gst/pan
+ * uploads — e.g. FSSAI license, shop act license — managed from the Profile tab. */
+export interface AdditionalDocumentData {
+  id: string;
+  name: string;
+  url: string;
+  uploadedAt: Date;
+}
+
+export type BankDetailsRequestStatus = 'pending' | 'approved' | 'rejected';
+
+/** A vendor-submitted request to change their live bank details. It never
+ * applies automatically — an admin must approve it before `bankDetails` changes. */
+export interface PendingBankDetailsData {
+  data: BankDetailsData;
+  status: BankDetailsRequestStatus;
+  submittedAt: Date;
+  reviewNote?: string;
+  reviewedAt?: Date;
 }
 
 // ---------------------------------------------------------------------------
@@ -229,6 +252,13 @@ export interface VendorDoc {
    * addresses above — managed post-approval from the Profile tab. */
   addresses: VendorAddressData[];
 
+  /** Arbitrary supporting documents beyond the fixed KYC uploads. */
+  additionalDocuments: AdditionalDocumentData[];
+
+  /** Outstanding request to change live bank details — set by the vendor,
+   * cleared/applied only by admin approval. Only one may be pending at a time. */
+  pendingBankDetails?: PendingBankDetailsData;
+
   /** Which notification categories this vendor wants — keyed the same as
    * vender_app's NotificationPref list. Missing keys default to enabled. */
   notificationPrefs?: Record<string, boolean>;
@@ -278,6 +308,8 @@ const vendorSchema = new Schema<VendorDoc>(
     rejectionReason: String,
 
     addresses: { type: [Schema.Types.Mixed] as unknown as VendorAddressData[], default: [] },
+    additionalDocuments: { type: [Schema.Types.Mixed] as unknown as AdditionalDocumentData[], default: [] },
+    pendingBankDetails: { type: Schema.Types.Mixed },
     notificationPrefs: { type: Schema.Types.Mixed, default: {} },
 
     storeSetupStep: { type: String, default: 'profile' },

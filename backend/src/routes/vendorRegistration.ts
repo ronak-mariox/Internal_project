@@ -24,7 +24,7 @@ vendorRegistrationRouter.patch(
   body('displayName').isString().trim().notEmpty().withMessage('Display name is required'),
   body('category').isString().trim().notEmpty().withMessage('Business category is required'),
   body('addressLine1').isString().trim().notEmpty().withMessage('Address line 1 is required'),
-  body('addressLine2').isString().trim().notEmpty().withMessage('Address line 2 is required'),
+  body('addressLine2').optional({ checkFalsy: true }).isString().trim(),
   body('city').isString().trim().notEmpty().withMessage('City is required'),
   body('state').isString().trim().notEmpty().withMessage('State is required'),
   body('pincode').isString().isLength({ min: 6, max: 6 }).isNumeric().withMessage('Enter a valid 6-digit pincode'),

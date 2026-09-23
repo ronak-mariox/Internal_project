@@ -1,11 +1,12 @@
 import React from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { useProfile, DocumentStatus } from '../../context/ProfileContext';
 import { Button, NavHeader } from '../../components';
 import { Icon, IconName } from '../../icons/Icon';
+import { resolveAssetUrl } from '../../utils/resolveAssetUrl';
 import { colors, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'ProfileDocumentStatus'>;
@@ -45,7 +46,16 @@ export function ProfileDocumentStatusScreen({ navigation, route }: Props) {
     );
   }
 
-  const tone = STATUS_COLORS[document.status];
+  const doc = document;
+  const tone = STATUS_COLORS[doc.status];
+
+  function handleDownload() {
+    if (!doc.url) {
+      Alert.alert('Not available', 'This document has not been uploaded yet.');
+      return;
+    }
+    Linking.openURL(resolveAssetUrl(doc.url));
+  }
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
@@ -107,7 +117,7 @@ export function ProfileDocumentStatusScreen({ navigation, route }: Props) {
           <Button
             label="Download"
             icon={<Icon name="file-text" size={18} color={colors.white} />}
-            onPress={() => Alert.alert('Download', 'Coming soon.')}
+            onPress={handleDownload}
           />
           <View style={styles.footerGap} />
           <Button

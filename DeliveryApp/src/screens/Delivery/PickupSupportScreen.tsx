@@ -1,114 +1,106 @@
-import React, {useState} from 'react';
-import {ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View} from 'react-native';
+import React, {useEffect, useState} from 'react';
+import {Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
-import {Icon, IconBackButton, Screen} from '../../components';
+import {Button, EmptyState, Icon, IconBackButton, Loader, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PickupSupport'>;
 
 export function PickupSupportScreen({route, navigation}: Props) {
   const {orderId} = route.params;
-  const [message, setMessage] = useState('');
-  const [optionsExpanded, setOptionsExpanded] = useState(false);
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    getOrder(orderId)
+      .then(o => { if (!cancelled) setOrder(o); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [orderId, getOrder]);
+
+  if (loading) {
+    return (
+      <Screen edges={['top', 'bottom']}>
+        <Loader label="Loading…" fullscreen />
+      </Screen>
+    );
+  }
+
+  if (!order) {
+    return (
+      <Screen edges={['top', 'bottom']}>
+        <EmptyState icon="alert-triangle" title="Order not found" description="This order could not be loaded." />
+      </Screen>
+    );
+  }
+
+  const storePhone = order.pickup.phone;
+  const callStore = () => {
+    if (storePhone) {
+      Linking.openURL(`tel:${storePhone}`).catch(() => {});
+    }
+  };
 
   return (
-    <Screen edges={['top', 'bottom']} keyboardAvoiding>
+    <Screen edges={['top', 'bottom']}>
       <View style={styles.header}>
         <IconBackButton onPress={() => navigation.goBack()} />
         <View style={styles.headerText}>
           <Text style={styles.headerTitle}>Pickup Support</Text>
-          <Text style={styles.headerSubtitle}>Order #{orderId} · Swiggy Instamart</Text>
+          <Text style={styles.headerSubtitle}>{`Order #${order.orderNumber} · ${order.pickup.name}`}</Text>
         </View>
       </View>
 
       <ScrollView style={styles.flex} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <View style={styles.summaryCard}>
-          <Text style={styles.cardLabel}>ISSUE SUMMARY</Text>
+          <Text style={styles.cardLabel}>ORDER</Text>
           <View style={styles.row}>
-            <Text style={styles.rowLabel}>Issue type</Text>
-            <Text style={styles.rowValueDanger}>Store cannot find order</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Reported at</Text>
-            <Text style={styles.rowValue}>2:38 PM</Text>
+            <Text style={styles.rowLabel}>Store</Text>
+            <Text style={styles.rowValue} numberOfLines={1}>{order.pickup.name}</Text>
           </View>
           <View style={styles.row}>
             <Text style={styles.rowLabel}>Order ID</Text>
-            <Text style={styles.rowValue}>#{orderId}</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Store</Text>
-            <Text style={styles.rowValue}>Swiggy Instamart</Text>
+            <Text style={styles.rowValue}>{`#${order.orderNumber}`}</Text>
           </View>
         </View>
 
-        <View style={styles.chatCard}>
-          <View style={styles.chatHeader}>
-            <View style={styles.chatDot} />
-            <Text style={styles.chatHeaderText}>Live Support Chat</Text>
+        <TouchableOpacity
+          style={[styles.actionRow, !storePhone && styles.actionRowDisabled]}
+          activeOpacity={0.85}
+          disabled={!storePhone}
+          onPress={callStore}>
+          <Icon name="phone" size={20} color={colors.primary} />
+          <View style={styles.actionText}>
+            <Text style={styles.actionTitle}>Call Store</Text>
+            <Text style={styles.actionSubtitle}>{storePhone ? 'Speak directly with the store' : 'No phone number on file'}</Text>
           </View>
-          <View style={styles.chatBody}>
-            <Text style={styles.chatSystemText}>Support agent joined · 2:39 PM</Text>
-            <View style={styles.chatBubbleRow}>
-              <View style={styles.agentAvatar}>
-                <Icon name="user" size={14} color={colors.white} />
-              </View>
-              <View style={styles.chatBubble}>
-                <Text style={styles.chatBubbleText}>
-                  Hi Ravi, I can see there's an issue with order #{orderId}. I'm checking with the store now.
-                </Text>
-                <Text style={styles.chatBubbleTime}>2:39 PM</Text>
-              </View>
-            </View>
-            <View style={styles.chatInputRow}>
-              <TextInput
-                style={styles.chatInput}
-                placeholder="Type your message…"
-                placeholderTextColor={colors.textMuted}
-                value={message}
-                onChangeText={setMessage}
-              />
-              <TouchableOpacity style={styles.sendButtonSmall} activeOpacity={0.85} onPress={() => setMessage('')}>
-                <Icon name="send" size={16} color={colors.white} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-
-        <TouchableOpacity style={styles.otherOptions} activeOpacity={0.85} onPress={() => setOptionsExpanded(e => !e)}>
-          <Text style={styles.otherOptionsText}>Other options</Text>
-          <Icon name="chevron-down" size={16} color={colors.textPrimary} />
         </TouchableOpacity>
-        {optionsExpanded && (
-          <View style={styles.expandedOptions}>
-            <TouchableOpacity
-              style={styles.expandedOptionRowFirst}
-              activeOpacity={0.7}
-              onPress={() => navigation.navigate('PickupRetry', {orderId})}>
-              <Text style={styles.expandedOptionText}>Retry pickup instead</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.expandedOptionRow}
-              activeOpacity={0.7}
-              onPress={() => navigation.reset({index: 0, routes: [{name: 'Home'}]})}>
-              <Text style={styles.expandedOptionTextDanger}>Cancel order</Text>
-            </TouchableOpacity>
+
+        <TouchableOpacity style={styles.actionRow} activeOpacity={0.85} onPress={() => navigation.navigate('PickupRetry', {orderId})}>
+          <Icon name="refresh" size={20} color={colors.primary} />
+          <View style={styles.actionText}>
+            <Text style={styles.actionTitle}>Retry Pickup</Text>
+            <Text style={styles.actionSubtitle}>Go back and try collecting the order again</Text>
           </View>
-        )}
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.actionRow} activeOpacity={0.85} onPress={() => navigation.navigate('SupportHub')}>
+          <Icon name="headphones" size={20} color={colors.primary} />
+          <View style={styles.actionText}>
+            <Text style={styles.actionTitle}>Contact Support</Text>
+            <Text style={styles.actionSubtitle}>Escalate to Verdant support team</Text>
+          </View>
+        </TouchableOpacity>
       </ScrollView>
 
       <View style={styles.footer}>
-        <TextInput
-          style={styles.footerInput}
-          placeholder="Type your message…"
-          placeholderTextColor={colors.textMuted}
-          value={message}
-          onChangeText={setMessage}
-        />
-        <TouchableOpacity style={styles.sendButton} activeOpacity={0.85} onPress={() => setMessage('')}>
-          <Icon name="send" size={20} color={colors.white} />
-        </TouchableOpacity>
+        <Button label="Back" variant="secondary" onPress={() => navigation.goBack()} />
       </View>
     </Screen>
   );
@@ -135,57 +127,11 @@ const styles = StyleSheet.create({
   cardLabel: {...typography.overline, color: colors.textSecondary, letterSpacing: 0.4, marginBottom: spacing.sm},
   row: {flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.xs},
   rowLabel: {...typography.label, color: colors.textSecondary},
-  rowValue: {...typography.labelSemibold, color: colors.textPrimary},
-  rowValueDanger: {...typography.labelSemibold, color: colors.danger},
-  chatCard: {backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, overflow: 'hidden'},
-  chatHeader: {flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border, paddingHorizontal: spacing.md, paddingVertical: spacing.md},
-  chatDot: {width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary},
-  chatHeaderText: {...typography.labelSemibold, color: colors.textPrimary},
-  chatBody: {padding: spacing.md, gap: spacing.md},
-  chatSystemText: {...typography.caption, color: colors.textSecondary, textAlign: 'center'},
-  chatBubbleRow: {flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm},
-  agentAvatar: {width: 30, height: 30, borderRadius: 15, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center'},
-  chatBubble: {flex: 1, backgroundColor: colors.background, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, borderBottomRightRadius: radius.lg, padding: spacing.md},
-  chatBubbleText: {...typography.label, color: colors.textPrimary},
-  chatBubbleTime: {...typography.caption, fontSize: 11, color: colors.textSecondary, marginTop: 4},
-  chatInputRow: {flexDirection: 'row', alignItems: 'center', gap: spacing.sm},
-  chatInput: {
-    flex: 1,
-    height: 40,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.lg,
-    ...typography.label,
-    color: colors.textPrimary,
-  },
-  sendButtonSmall: {width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center'},
-  otherOptions: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.md},
-  otherOptionsText: {...typography.bodySemibold, fontSize: 14, color: colors.textPrimary},
-  expandedOptions: {backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, overflow: 'hidden'},
-  expandedOptionRowFirst: {paddingHorizontal: spacing.lg, paddingVertical: spacing.md},
-  expandedOptionRow: {paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderTopWidth: 1, borderTopColor: colors.border},
-  expandedOptionText: {...typography.body, color: colors.textPrimary},
-  expandedOptionTextDanger: {...typography.body, color: colors.danger},
-  footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    padding: spacing.lg,
-    backgroundColor: colors.surface,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  footerInput: {
-    flex: 1,
-    height: 48,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    borderRadius: radius.pill,
-    backgroundColor: colors.background,
-    paddingHorizontal: spacing.lg,
-    ...typography.body,
-    color: colors.textPrimary,
-  },
-  sendButton: {width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center'},
+  rowValue: {...typography.labelSemibold, color: colors.textPrimary, flexShrink: 1, textAlign: 'right'},
+  actionRow: {flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.lg},
+  actionRowDisabled: {opacity: 0.5},
+  actionText: {flex: 1},
+  actionTitle: {...typography.bodyLgMedium, color: colors.textPrimary},
+  actionSubtitle: {...typography.label, color: colors.textSecondary, marginTop: 1},
+  footer: {padding: spacing.lg, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border},
 });

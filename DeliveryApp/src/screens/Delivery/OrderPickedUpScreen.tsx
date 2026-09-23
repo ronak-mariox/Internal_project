@@ -1,14 +1,55 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {ScrollView, StyleSheet, Text, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
+import {useDriverAuth} from '../../context/DriverAuthContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'OrderPickedUp'>;
 
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function formatTime(iso?: string): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+}
+
 export function OrderPickedUpScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const {driver} = useDriverAuth();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
+
+  const firstName = driver?.fullName?.split(' ')[0];
+
+  const distanceKm =
+    order?.pickup.latitude != null &&
+    order?.pickup.longitude != null &&
+    order?.address.latitude != null &&
+    order?.address.longitude != null
+      ? haversineKm(order.pickup.latitude, order.pickup.longitude, order.address.latitude, order.address.longitude)
+      : null;
 
   return (
     <Screen backgroundColor={colors.primary} statusBarStyle="light-content" edges={['top', 'bottom']}>
@@ -17,31 +58,25 @@ export function OrderPickedUpScreen({route, navigation}: Props) {
           <Icon name="check" size={28} color={colors.white} />
         </View>
         <Text style={styles.headerTitle}>Order Picked Up!</Text>
-        <Text style={styles.headerSubtitle}>Great job, Ravi! Time to deliver.</Text>
+        <Text style={styles.headerSubtitle}>{firstName ? `Great job, ${firstName}! ` : ''}Time to deliver.</Text>
       </View>
 
       <ScrollView style={styles.flex} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <View style={styles.card}>
           <Text style={styles.cardLabel}>PICKUP SUMMARY</Text>
-          <Row label="Pickup time" value="2:41 PM" />
-          <Row label="Wait time at store" value="8 minutes" />
+          <Row label="Pickup time" value={formatTime(order?.pickupConfirmedAt)} />
           <Row label="Verification" value="Completed" />
         </View>
 
         <View style={styles.card}>
           <Text style={styles.cardLabel}>DELIVERY DETAILS</Text>
-          <Row label="Customer area" value="HSR Layout Sector 2" />
-          <Row label="Distance" value="3.6 km" />
-          <Row label="Estimated delivery" value="3:02 PM" />
-          <Row label="Earnings on delivery" value="₹82 (on completion)" valueColor={colors.primary} />
-        </View>
-
-        <View style={styles.bonusBanner}>
-          <Icon name="bar-chart" size={18} color={colors.primary} />
-          <Text style={styles.bonusText}>
-            <Text style={styles.bonusStrong}>On-time pickup! </Text>
-            +2 performance points
-          </Text>
+          <Row label="Customer area" value={order?.address.city ?? '—'} />
+          {distanceKm != null && <Row label="Distance" value={`${distanceKm.toFixed(1)} km`} />}
+          <Row
+            label="Payment"
+            value={order?.paymentMethod === 'cod' ? `COD · ₹${order.pricing.grandTotal}` : 'Paid Online'}
+            valueColor={colors.primary}
+          />
         </View>
       </ScrollView>
 
@@ -88,8 +123,5 @@ const styles = StyleSheet.create({
   row: {flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.xs},
   rowLabel: {...typography.label, color: colors.textSecondary},
   rowValue: {...typography.labelSemibold, color: colors.textPrimary},
-  bonusBanner: {flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.successSurface, borderWidth: 1, borderColor: '#A7F3D0', borderRadius: radius.lg, padding: spacing.md},
-  bonusText: {...typography.label, color: colors.primary, flex: 1},
-  bonusStrong: {...typography.labelSemibold, color: colors.primary},
   footer: {padding: spacing.lg, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border},
 });

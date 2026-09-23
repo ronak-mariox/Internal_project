@@ -11,6 +11,7 @@ import { vendorRegistrationRouter } from './vendorRegistration';
 import { vendorStoreSetupRouter } from './vendorStoreSetup';
 import { vendorProductRouter } from './vendorProducts';
 import { vendorOrderRouter } from './vendorOrders';
+import { vendorOfferRouter } from './vendorOffers';
 import { vendorProfileRouter } from './vendorProfile';
 import { vendorAnalyticsRouter } from './vendorAnalytics';
 import { vendorNotificationRouter } from './vendorNotifications';
@@ -133,3 +134,4 @@ vendorRouter.get(
 
 vendorRouter.use('/products', vendorProductRouter);
 vendorRouter.use('/orders', vendorOrderRouter);
+vendorRouter.use('/offers', vendorOfferRouter);

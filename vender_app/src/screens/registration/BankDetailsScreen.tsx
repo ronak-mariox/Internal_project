@@ -5,12 +5,15 @@ import type { AuthStackParamList } from '../../navigation/types';
 import { Button, FormSectionCard, Input, InfoBanner, NavHeader, ProgressSteps, ScreenContainer, SelectField } from '../../components';
 import { Icon } from '../../icons/Icon';
 import { useRegistration, type BankDetailsData } from '../../context/RegistrationContext';
-import { api, getApiErrorMessage } from '../../services/api';
+import { api, getApiErrorMessage, getFieldErrors } from '../../services/api';
+import { isRequired, isValidIFSC, type FormErrors } from '../../utils/validators';
 import { colors, fontFamilies, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'BankDetails'>;
 
 const ACCOUNT_TYPES = ['Current Account', 'Savings Account'];
+
+type Errors = FormErrors<'accountHolderName' | 'accountNumber' | 'confirmAccountNumber' | 'ifsc' | 'bankName' | 'branch'>;
 
 export function BankDetailsScreen({ navigation }: Props) {
   const { data, updateBankDetails } = useRegistration();
@@ -26,25 +29,31 @@ export function BankDetailsScreen({ navigation }: Props) {
     },
   );
   const [confirmAccountNumber, setConfirmAccountNumber] = useState(form.accountNumber);
-  const [error, setError] = useState<string | undefined>();
+  const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
 
   function set<K extends keyof BankDetailsData>(key: K, value: BankDetailsData[K]) {
     setForm(prev => ({ ...prev, [key]: value }));
+    if (key in errors) {
+      setErrors(prev => ({ ...prev, [key]: undefined }));
+    }
   }
 
   const numbersMatch = form.accountNumber.length > 0 && form.accountNumber === confirmAccountNumber;
 
   async function handleSave() {
-    if (!form.accountHolderName || !form.accountNumber || !form.ifsc || !form.bankName || !form.branch) {
-      setError('Please fill in all required fields');
-      return;
-    }
-    if (!numbersMatch) {
-      setError('Account numbers do not match');
-      return;
-    }
-    setError(undefined);
+    const nextErrors: Errors = {};
+    if (!isRequired(form.accountHolderName)) nextErrors.accountHolderName = 'Enter the account holder name';
+    if (!isRequired(form.accountNumber)) nextErrors.accountNumber = 'Enter the account number';
+    if (!isRequired(confirmAccountNumber)) nextErrors.confirmAccountNumber = 'Re-enter the account number';
+    else if (!numbersMatch) nextErrors.confirmAccountNumber = 'Account numbers do not match';
+    if (!isValidIFSC(form.ifsc)) nextErrors.ifsc = 'Enter a valid IFSC code, e.g. HDFC0001234';
+    if (!isRequired(form.bankName)) nextErrors.bankName = 'Enter the bank name';
+    if (!isRequired(form.branch)) nextErrors.branch = 'Enter the branch';
+
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+
     setSaving(true);
     try {
       await api.patch('/vendor/registration/bank-details', {
@@ -59,7 +68,12 @@ export function BankDetailsScreen({ navigation }: Props) {
       updateBankDetails({ ...form, verified: true });
       navigation.navigate('KYCReview');
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Could not save your bank details. Please try again.'));
+      const fieldErrors = getFieldErrors(err);
+      if (Object.keys(fieldErrors).length > 0) {
+        setErrors(fieldErrors as Errors);
+      } else {
+        setErrors({ form: getApiErrorMessage(err, 'Could not save your bank details. Please try again.') });
+      }
     } finally {
       setSaving(false);
     }
@@ -84,6 +98,7 @@ export function BankDetailsScreen({ navigation }: Props) {
             onChangeText={text => set('accountHolderName', text.toUpperCase())}
             autoCapitalize="characters"
             helperText="Must match business owner name"
+            error={errors.accountHolderName}
           />
           <Input
             label="Account Number"
@@ -93,6 +108,7 @@ export function BankDetailsScreen({ navigation }: Props) {
             onChangeText={text => set('accountNumber', text.replace(/[^0-9]/g, ''))}
             placeholder="Enter account number"
             keyboardType="number-pad"
+            error={errors.accountNumber}
           />
           <View>
             <Input
@@ -100,9 +116,13 @@ export function BankDetailsScreen({ navigation }: Props) {
               required
               leftIcon="credit-card"
               value={confirmAccountNumber}
-              onChangeText={setConfirmAccountNumber}
+              onChangeText={text => {
+                setConfirmAccountNumber(text);
+                if (errors.confirmAccountNumber) setErrors(prev => ({ ...prev, confirmAccountNumber: undefined }));
+              }}
               placeholder="Re-enter account number"
               keyboardType="number-pad"
+              error={errors.confirmAccountNumber}
             />
             {confirmAccountNumber.length > 0 ? (
               <View style={styles.matchRow}>
@@ -129,6 +149,7 @@ export function BankDetailsScreen({ navigation }: Props) {
               placeholder="HDFC0001234"
               autoCapitalize="characters"
               helperText="11-character code, e.g. HDFC0001234"
+              error={errors.ifsc}
             />
           </View>
 
@@ -139,6 +160,7 @@ export function BankDetailsScreen({ navigation }: Props) {
             value={form.bankName}
             onChangeText={text => set('bankName', text)}
             placeholder="e.g. HDFC Bank"
+            error={errors.bankName}
           />
           <Input
             label="Branch"
@@ -147,6 +169,7 @@ export function BankDetailsScreen({ navigation }: Props) {
             value={form.branch}
             onChangeText={text => set('branch', text)}
             placeholder="e.g. Dadar West, Mumbai"
+            error={errors.branch}
           />
 
           <SelectField
@@ -162,7 +185,7 @@ export function BankDetailsScreen({ navigation }: Props) {
           message="Ensure the bank account is in the name of the registered business owner. Settlement will fail if names don't match."
         />
 
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {errors.form ? <Text style={styles.errorText}>{errors.form}</Text> : null}
 
         <View style={styles.buttonRow}>
           <View style={styles.buttonRowItem}>

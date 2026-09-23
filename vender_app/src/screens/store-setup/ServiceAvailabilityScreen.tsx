@@ -6,9 +6,12 @@ import { Button, FormSectionCard, Input, NavHeader, ProgressSteps, ScreenContain
 import { Icon } from '../../icons/Icon';
 import { useStoreSetup, type DeliverySlot } from '../../context/StoreSetupContext';
 import { api, getApiErrorMessage } from '../../services/api';
+import { isPositiveNumber, type FormErrors } from '../../utils/validators';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'ServiceAvailability'>;
+
+type Errors = FormErrors<'maxOrders'>;
 
 const DEFAULT_SLOTS: DeliverySlot[] = [
   { id: 'morning', label: 'Morning', window: '8:00 AM – 12:00 PM', totalSlots: 20, usedSlots: 12 },
@@ -24,9 +27,16 @@ export function ServiceAvailabilityScreen({ navigation }: Props) {
   const [maxOrders, setMaxOrders] = useState(data.serviceAvailability?.maxSimultaneousOrders ?? '25');
   const [autoPause, setAutoPause] = useState(data.serviceAvailability?.autoPauseAtCapacity ?? true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | undefined>();
+  const [errors, setErrors] = useState<Errors>({});
 
   async function handleContinue() {
+    const nextErrors: Errors = {};
+    if (!isPositiveNumber(maxOrders)) {
+      nextErrors.maxOrders = 'Enter a valid number of orders';
+    }
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+
     const value = {
       slotsEnabled,
       slots,
@@ -34,13 +44,12 @@ export function ServiceAvailabilityScreen({ navigation }: Props) {
       autoPauseAtCapacity: autoPause,
     };
     setSaving(true);
-    setError(undefined);
     try {
       await api.patch('/vendor/store-setup/availability', value);
       updateServiceAvailability(value);
       navigation.navigate('StoreStatus');
     } catch (err) {
-      setError(getApiErrorMessage(err));
+      setErrors({ form: getApiErrorMessage(err) });
     } finally {
       setSaving(false);
     }
@@ -98,10 +107,14 @@ export function ServiceAvailabilityScreen({ navigation }: Props) {
           <Input
             label="Max Simultaneous Orders"
             value={maxOrders}
-            onChangeText={text => setMaxOrders(text.replace(/[^0-9]/g, ''))}
+            onChangeText={text => {
+              setMaxOrders(text.replace(/[^0-9]/g, ''));
+              if (errors.maxOrders) setErrors(prev => ({ ...prev, maxOrders: undefined }));
+            }}
             keyboardType="number-pad"
             placeholder="25"
-            helperText="Store will auto-pause when this limit is reached"
+            helperText={errors.maxOrders ? undefined : 'Store will auto-pause when this limit is reached'}
+            error={errors.maxOrders}
           />
           <View style={styles.toggleRow}>
             <View style={styles.toggleTextColumn}>
@@ -117,7 +130,7 @@ export function ServiceAvailabilityScreen({ navigation }: Props) {
           </View>
         </FormSectionCard>
 
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {errors.form ? <Text style={styles.errorText}>{errors.form}</Text> : null}
 
         <View style={styles.footer}>
           <Button label="Save & Continue" onPress={handleContinue} loading={saving} />

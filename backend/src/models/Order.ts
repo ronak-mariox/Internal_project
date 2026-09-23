@@ -20,6 +20,8 @@ export interface OrderItemSnapshot {
   mrp: number;
   quantity: number;
   subtotal: number;
+  offerId?: Types.ObjectId;
+  originalSubtotal?: number;
 }
 
 export interface OrderAddressSnapshot {
@@ -66,9 +68,19 @@ export interface OrderDoc {
   statusHistory: OrderStatusEvent[];
   specialInstructions?: string;
   cancelReason?: string;
-  cancelledBy?: 'customer' | 'vendor' | 'admin';
+  cancelledBy?: 'customer' | 'vendor' | 'admin' | 'driver';
   placedAt: Date;
   deliveredAt?: Date;
+  deliveryOtpHash?: string;
+  pickupConfirmedAt?: Date;
+  deliveryProofUrl?: string;
+  driverEarnings?: {
+    base: number;
+    distance: number;
+    onTimeBonus: number;
+    incentiveBonus: number;
+    total: number;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -84,6 +96,8 @@ const orderItemSchema = new Schema<OrderItemSnapshot>(
     mrp: { type: Number, required: true },
     quantity: { type: Number, required: true },
     subtotal: { type: Number, required: true },
+    offerId: { type: Schema.Types.ObjectId, ref: 'Offer' },
+    originalSubtotal: Number,
   },
   { _id: false },
 );
@@ -117,15 +131,20 @@ const orderSchema = new Schema<OrderDoc>(
     statusHistory: { type: [orderStatusEventSchema], default: [] },
     specialInstructions: String,
     cancelReason: String,
-    cancelledBy: { type: String, enum: ['customer', 'vendor', 'admin'] },
+    cancelledBy: { type: String, enum: ['customer', 'vendor', 'admin', 'driver'] },
     placedAt: { type: Date, required: true },
     deliveredAt: Date,
+    deliveryOtpHash: String,
+    pickupConfirmedAt: Date,
+    deliveryProofUrl: String,
+    driverEarnings: { type: Schema.Types.Mixed },
   },
   { timestamps: true },
 );
 
 orderSchema.index({ customerId: 1, createdAt: -1 });
 orderSchema.index({ vendorId: 1, createdAt: -1 });
+orderSchema.index({ driverId: 1, createdAt: -1 });
 orderSchema.index({ status: 1 });
 
 export const Order = model<OrderDoc>('Order', orderSchema);

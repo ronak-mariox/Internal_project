@@ -1,6 +1,7 @@
 import React, {useEffect, useState} from 'react';
 import {Alert, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
+import axios from 'axios';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, Icon, IconBackButton, OtpInput, Screen} from '../../components';
 import {colors, spacing, typography} from '../../theme';
@@ -20,7 +21,7 @@ interface RegistrationStatusResponse {
 }
 
 export function VerifyRegistrationOtpScreen({route, navigation}: Props) {
-  const {mobile} = route.params;
+  const {mobile, flow = 'register'} = route.params;
   const {verifyOtp, requestOtp} = useDriverAuth();
   const [otp, setOtp] = useState('');
   const [secondsLeft, setSecondsLeft] = useState(RESEND_SECONDS);
@@ -68,14 +69,25 @@ export function VerifyRegistrationOtpScreen({route, navigation}: Props) {
     }
     setVerifying(true);
     try {
-      const result = await verifyOtp(mobile, otp);
+      const result = await verifyOtp(mobile, otp, flow);
       if (result.isNewDriver) {
         navigation.navigate('PersonalInformation', {mobile});
       } else {
         await routeAfterExistingDriverVerify();
       }
     } catch (err) {
-      navigation.navigate('IncorrectOtp', {mobile, reason: getApiErrorMessage(err, 'The code you entered doesn\'t match. Please check and try again.')});
+      if (flow === 'login' && axios.isAxiosError(err) && err.response?.status === 404 && err.response?.data?.reason === 'account_not_found') {
+        Alert.alert(
+          'Account Not Found',
+          "We couldn't find a rider account for this number. Please register first to continue.",
+          [
+            {text: 'Try Different Number', style: 'cancel', onPress: () => navigation.navigate('Login')},
+            {text: 'Register Now', onPress: () => navigation.navigate('RegistrationLanding')},
+          ],
+        );
+        return;
+      }
+      navigation.navigate('IncorrectOtp', {mobile, flow, reason: getApiErrorMessage(err, 'The code you entered doesn\'t match. Please check and try again.')});
     } finally {
       setVerifying(false);
     }
@@ -131,7 +143,7 @@ export function VerifyRegistrationOtpScreen({route, navigation}: Props) {
 
         <Text style={styles.footerText}>
           {"Didn't receive the OTP? "}
-          <Text style={styles.footerLink} onPress={() => navigation.navigate('ResendOtpMethod', {mobile})}>
+          <Text style={styles.footerLink} onPress={() => navigation.navigate('ResendOtpMethod', {mobile, flow})}>
             Try another method
           </Text>
         </Text>

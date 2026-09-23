@@ -1,27 +1,127 @@
-import React, {useCallback, useState} from 'react';
-import {RefreshControl, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
+import {Alert, RefreshControl, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
+import {useFocusEffect} from '@react-navigation/native';
 import {RootStackParamList} from '../../navigation/types';
 import {Badge, Button, Card, Icon, ProgressBar, Screen, StatTile, ToggleSwitch} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {api, getApiErrorMessage} from '../../services/api';
+import {useDriverAuth} from '../../context/DriverAuthContext';
+import {useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
-const DEMO_ORDER_ID = 'VR-84721';
+const AVAILABLE_POLL_INTERVAL_MS = 8000;
+
+interface HomeSummary {
+  todayEarnings: number;
+  todayDeliveries: number;
+  activeOrderId: string | null;
+}
+
+function greetingForNow(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
 
 export function HomeScreen({navigation}: Props) {
-  const [online, setOnline] = useState(false);
+  const {driver, refreshDriver} = useDriverAuth();
+  const {availableOrders, activeOrders, historyOrders, refreshAvailable, refreshActive, refreshHistory} = useOrders();
+
+  const [online, setOnline] = useState(!!driver?.isOnline);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [summary, setSummary] = useState<HomeSummary | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  const handleSimulateOrder = () => {
-    navigation.navigate('NewOrderRequest', {orderId: DEMO_ORDER_ID});
-  };
+  const lastPromptedOrderIdRef = useRef<string | null>(null);
+  const activeOrder = activeOrders[0];
+  const lastDelivery = historyOrders[0];
 
-  const handleRefresh = useCallback(() => {
+  const loadSummary = useCallback(async () => {
+    try {
+      const response = await api.get<HomeSummary>('/driver/home-summary');
+      setSummary(response.data);
+    } catch {
+      // Non-critical — stats simply stay blank/stale until the next successful poll.
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        const latest = await refreshDriver();
+        if (!cancelled && latest) setOnline(!!latest.isOnline);
+      })();
+      loadSummary();
+      refreshActive().catch(() => {});
+      refreshHistory('completed').catch(() => {});
+      return () => {
+        cancelled = true;
+      };
+    }, [refreshDriver, loadSummary, refreshActive, refreshHistory]),
+  );
+
+  // Backend is pull-based (no push notifications for new orders), so simulate real-time
+  // incoming-order UX with a short poll while online.
+  useEffect(() => {
+    if (!online) return;
+    refreshAvailable().catch(() => {});
+    const interval = setInterval(() => {
+      refreshAvailable().catch(() => {});
+      refreshActive().catch(() => {});
+    }, AVAILABLE_POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [online, refreshAvailable, refreshActive]);
+
+  // Auto-surface the next available order as a full-screen request, like the real apps this
+  // mirrors — but only when there's no delivery already in progress, and only once per order.
+  useEffect(() => {
+    if (!online || activeOrders.length > 0) return;
+    const next = availableOrders[0];
+    if (!next || lastPromptedOrderIdRef.current === next.id) return;
+    lastPromptedOrderIdRef.current = next.id;
+    navigation.navigate('NewOrderRequest', {orderId: next.id});
+  }, [online, availableOrders, activeOrders, navigation]);
+
+  const handleToggleOnline = useCallback(
+    async (next: boolean) => {
+      setOnline(next);
+      setUpdatingStatus(true);
+      try {
+        await api.patch('/driver/status', {isOnline: next});
+      } catch (err) {
+        setOnline(!next);
+        Alert.alert('Could not update status', getApiErrorMessage(err));
+      } finally {
+        setUpdatingStatus(false);
+      }
+    },
+    [],
+  );
+
+  const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    navigation.navigate('StateSkeletonLoading');
-    setTimeout(() => setRefreshing(false), 300);
-  }, [navigation]);
+    try {
+      await Promise.all([
+        loadSummary(),
+        refreshActive().catch(() => {}),
+        refreshHistory('completed').catch(() => {}),
+        online ? refreshAvailable().catch(() => {}) : Promise.resolve(),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadSummary, refreshActive, refreshHistory, refreshAvailable, online]);
+
+  const addressLine = (() => {
+    const addr = driver?.address as {area?: string; city?: string; line1?: string} | undefined;
+    if (addr?.area && addr?.city) return `${addr.area}, ${addr.city}`;
+    if (addr?.city) return addr.city;
+    return 'Location not set';
+  })();
 
   return (
     <Screen
@@ -37,10 +137,8 @@ export function HomeScreen({navigation}: Props) {
               <Icon name="user" size={22} color={colors.white} />
             </View>
             <View>
-              <Text style={[styles.greeting, {color: online ? 'rgba(255,255,255,0.7)' : colors.textMuted}]}>
-                {online ? 'Good afternoon' : 'Good morning'}
-              </Text>
-              <Text style={styles.name}>Rahul Sharma</Text>
+              <Text style={[styles.greeting, {color: online ? 'rgba(255,255,255,0.7)' : colors.textMuted}]}>{greetingForNow()}</Text>
+              <Text style={styles.name}>{driver?.fullName ?? 'Driver'}</Text>
             </View>
           </View>
           <View style={styles.headerActions}>
@@ -71,12 +169,13 @@ export function HomeScreen({navigation}: Props) {
               </Text>
             </View>
             <Text style={[styles.statusHint, {color: online ? 'rgba(255,255,255,0.7)' : colors.dark600}]}>
-              {online ? 'Online since 11:30 AM · 2h 45m' : 'You are not receiving orders'}
+              {online ? "You're visible to nearby stores" : 'You are not receiving orders'}
             </Text>
           </View>
           <ToggleSwitch
             value={online}
-            onValueChange={setOnline}
+            onValueChange={handleToggleOnline}
+            disabled={updatingStatus}
             activeTrackColor="rgba(255,255,255,0.3)"
             inactiveTrackColor={colors.dark700}
           />
@@ -84,35 +183,52 @@ export function HomeScreen({navigation}: Props) {
 
         <TouchableOpacity style={styles.locationRow} activeOpacity={0.7} onPress={() => navigation.navigate('ProfileAddress')}>
           <Icon name="map-pin" size={13} color={online ? 'rgba(255,255,255,0.8)' : colors.dark600} />
-          <Text style={[styles.locationText, {color: online ? 'rgba(255,255,255,0.8)' : colors.dark600}]}>
-            Koramangala 4th Block, Bengaluru
-          </Text>
+          <Text style={[styles.locationText, {color: online ? 'rgba(255,255,255,0.8)' : colors.dark600}]}>{addressLine}</Text>
         </TouchableOpacity>
       </View>
 
       <View style={styles.body}>
         <View style={styles.statsRow}>
           <TouchableOpacity style={styles.flex} activeOpacity={0.8} onPress={() => navigation.navigate('EarningsDashboard')}>
-            <StatTile value={online ? '₹1,240' : '₹640'} label="Earnings" valueColor={colors.primary} />
+            <StatTile value={`₹${summary?.todayEarnings ?? 0}`} label="Today's Earnings" valueColor={colors.primary} />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.flex}
             activeOpacity={0.8}
-            onPress={() => online && navigation.navigate('DeliveriesCompleted')}
-            disabled={!online}>
-            <StatTile value={online ? '11' : '3h 20m'} label={online ? 'Deliveries' : 'Online Hours'} valueColor={online ? colors.primary : colors.textPrimary} />
+            onPress={() => navigation.navigate('DeliveriesCompleted')}>
+            <StatTile value={`${summary?.todayDeliveries ?? 0}`} label="Deliveries" valueColor={colors.primary} />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.flex}
             activeOpacity={0.8}
             onPress={() => navigation.navigate(online ? 'CustomerRating' : 'AcceptanceRate')}>
-            <StatTile value={online ? '4.92' : '94%'} label={online ? 'Rating' : 'Acceptance'} valueColor={online ? colors.primary : colors.textPrimary} />
+            <StatTile value={online ? '4.92' : '94%'} label={online ? 'Rating' : 'Acceptance'} valueColor={colors.textPrimary} />
           </TouchableOpacity>
         </View>
 
-        {online && (
+        {online && activeOrder && (
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate('HomeActiveDelivery', {orderId: activeOrder.id})}>
+            <Card style={styles.activeDeliveryCard}>
+              <View style={styles.activeDeliveryHeader}>
+                <Badge label="ACTIVE DELIVERY" tone="primary" />
+                <Text style={styles.activeDeliveryOrder}>#{activeOrder.orderNumber}</Text>
+              </View>
+              <Text style={styles.activeDeliveryRoute} numberOfLines={1}>
+                {activeOrder.pickup.name} → {activeOrder.address.city}
+              </Text>
+              <Text style={styles.activeDeliveryMeta}>
+                {activeOrder.status === 'out_for_delivery' ? 'Out for delivery' : 'Heading to pickup'} · ₹
+                {activeOrder.driverEarnings?.total ?? activeOrder.pricing.deliveryFee}
+              </Text>
+            </Card>
+          </TouchableOpacity>
+        )}
+
+        {online && !activeOrder && (
           <Card style={styles.waitingCard}>
-            <TouchableOpacity style={styles.waitingContent} activeOpacity={0.8} onPress={handleSimulateOrder}>
+            <TouchableOpacity style={styles.waitingContent} activeOpacity={0.8} onPress={() => refreshAvailable().catch(() => {})}>
               <View style={styles.waitingIcon}>
                 <Icon name="clock" size={26} color={colors.primary} />
               </View>
@@ -174,17 +290,25 @@ export function HomeScreen({navigation}: Props) {
         <TouchableOpacity activeOpacity={0.85} onPress={() => navigation.navigate('DeliveryHistory')}>
           <Card style={styles.lastDeliveryCard}>
             <Text style={styles.lastDeliveryTitle}>Last Delivery</Text>
-            <View style={styles.lastDeliveryRow}>
-              <View style={styles.lastDeliveryInfo}>
-                <Text style={styles.lastDeliveryOrder}>Order #{DEMO_ORDER_ID}</Text>
-                <Text style={styles.lastDeliveryRoute}>Swiggy Instamart → Koramangala</Text>
-                <Text style={styles.lastDeliveryMeta}>2:14 PM · 3.2 km · 18 min</Text>
+            {lastDelivery ? (
+              <View style={styles.lastDeliveryRow}>
+                <View style={styles.lastDeliveryInfo}>
+                  <Text style={styles.lastDeliveryOrder}>Order #{lastDelivery.orderNumber}</Text>
+                  <Text style={styles.lastDeliveryRoute} numberOfLines={1}>
+                    {lastDelivery.pickup.name} → {lastDelivery.address.city}
+                  </Text>
+                  <Text style={styles.lastDeliveryMeta}>
+                    {lastDelivery.deliveredAt ? new Date(lastDelivery.deliveredAt).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'}) : ''}
+                  </Text>
+                </View>
+                <View style={styles.lastDeliveryAmountWrap}>
+                  <Text style={styles.lastDeliveryAmount}>₹{lastDelivery.driverEarnings?.total ?? lastDelivery.pricing.deliveryFee}</Text>
+                  <Badge label="Delivered" tone="success" />
+                </View>
               </View>
-              <View style={styles.lastDeliveryAmountWrap}>
-                <Text style={styles.lastDeliveryAmount}>₹72</Text>
-                <Badge label="Delivered" tone="success" />
-              </View>
-            </View>
+            ) : (
+              <Text style={styles.lastDeliveryMeta}>No deliveries yet</Text>
+            )}
           </Card>
         </TouchableOpacity>
       </View>
@@ -195,7 +319,8 @@ export function HomeScreen({navigation}: Props) {
           variant={online ? 'secondary' : 'primary'}
           icon={online ? undefined : 'arrow-right'}
           iconPosition="right"
-          onPress={() => setOnline(o => !o)}
+          disabled={updatingStatus}
+          onPress={() => handleToggleOnline(!online)}
         />
       </View>
     </Screen>
@@ -268,6 +393,11 @@ const styles = StyleSheet.create({
   body: {padding: spacing.lg, gap: spacing.lg, backgroundColor: colors.background},
   statsRow: {flexDirection: 'row', gap: spacing.sm},
   flex: {flex: 1},
+  activeDeliveryCard: {gap: spacing.xs, borderWidth: 2, borderColor: colors.primary},
+  activeDeliveryHeader: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
+  activeDeliveryOrder: {...typography.captionSemibold, color: colors.textSecondary},
+  activeDeliveryRoute: {...typography.labelSemibold, color: colors.textPrimary},
+  activeDeliveryMeta: {...typography.caption, color: colors.textSecondary},
   waitingCard: {alignItems: 'center', paddingVertical: spacing.xl},
   waitingContent: {alignItems: 'center', gap: spacing.xs},
   waitingIcon: {

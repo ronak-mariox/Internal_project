@@ -1,45 +1,85 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Avatar, Badge, Button, Card, Icon} from '../../components';
 import {Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CustomerDeliveryDetails'>;
 
-const ORDER_ITEMS = [
-  {name: 'Almonds 500g', price: '₹299'},
-  {name: 'Greek Yogurt', price: '₹89'},
-  {name: 'Oats 1kg', price: '₹149'},
-];
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function initialsFor(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  return parts
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join('');
+}
 
 export function CustomerDeliveryDetailsScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
+
+  const customerName = order?.address.contactName ?? 'Customer';
+  const addressLine = order
+    ? [order.address.line1, order.address.line2, order.address.city].filter(Boolean).join(', ')
+    : '';
+
+  const distanceKm =
+    order?.pickup.latitude != null &&
+    order?.pickup.longitude != null &&
+    order?.address.latitude != null &&
+    order?.address.longitude != null
+      ? haversineKm(order.pickup.latitude, order.pickup.longitude, order.address.latitude, order.address.longitude)
+      : null;
 
   return (
     <Screen backgroundColor={colors.primary} statusBarStyle="light-content" edges={['top', 'bottom']} scroll>
       <View style={styles.header}>
         <Text style={styles.headerLabel}>ACTIVE DELIVERY</Text>
-        <Text style={styles.headerOrder}>#{orderId}</Text>
+        <Text style={styles.headerOrder}>#{order?.orderNumber ?? orderId}</Text>
         <Text style={styles.headerSubtitle}>Delivering to Customer</Text>
       </View>
 
       <View style={styles.body}>
         <Card elevated bordered={false} style={styles.card}>
           <View style={styles.customerRow}>
-            <Avatar initials="PM" size={56} />
+            <Avatar initials={initialsFor(customerName)} size={56} />
             <View style={styles.customerInfo}>
-              <Text style={styles.customerName}>Priya Mehta</Text>
-              <Text style={styles.customerAddress}>HSR Layout Sector 2, Bengaluru</Text>
+              <Text style={styles.customerName}>{customerName}</Text>
+              {!!addressLine && <Text style={styles.customerAddress}>{addressLine}</Text>}
             </View>
           </View>
-          <View style={styles.metaRow}>
-            <Icon name="navigation" size={16} color={colors.textPrimary} />
-            <Text style={styles.metaText}>4.8 km</Text>
-            <View style={styles.metaDot} />
-            <Text style={styles.metaText}>Est. 18 min</Text>
-          </View>
+          {distanceKm != null && (
+            <View style={styles.metaRow}>
+              <Icon name="navigation" size={16} color={colors.textPrimary} />
+              <Text style={styles.metaText}>{distanceKm.toFixed(1)} km</Text>
+            </View>
+          )}
           <View style={styles.actionRow}>
             <ActionButton icon="phone" label="Call" onPress={() => navigation.navigate('CallCustomer', {orderId})} />
             <ActionButton icon="message-circle" label="Message" onPress={() => navigation.navigate('MessageCustomer', {orderId})} />
@@ -47,46 +87,50 @@ export function CustomerDeliveryDetailsScreen({route, navigation}: Props) {
           </View>
         </Card>
 
-        <Card elevated bordered={false} style={styles.card}>
-          <Text style={styles.sectionTitle}>Delivery Instructions</Text>
-          <View style={styles.instructionRow}>
-            <Icon name="bell" size={18} color={colors.textSecondary} />
-            <Text style={styles.instructionText}>Leave at door if no answer</Text>
-          </View>
-          <View style={styles.divider} />
-          <View style={styles.instructionRow}>
-            <Icon name="lock" size={18} color={colors.textSecondary} />
-            <Text style={styles.instructionText}>Gate code: #1204</Text>
-          </View>
-        </Card>
+        {!!order?.specialInstructions && (
+          <Card elevated bordered={false} style={styles.card}>
+            <Text style={styles.sectionTitle}>Delivery Instructions</Text>
+            <View style={styles.instructionRow}>
+              <Icon name="bell" size={18} color={colors.textSecondary} />
+              <Text style={styles.instructionText}>{order.specialInstructions}</Text>
+            </View>
+          </Card>
+        )}
 
         <Card elevated bordered={false} style={styles.card}>
           <Text style={styles.sectionTitle}>Order Summary</Text>
-          {ORDER_ITEMS.map(item => (
-            <View key={item.name} style={styles.itemRow}>
-              <Text style={styles.itemName}>{item.name}</Text>
-              <Text style={styles.itemPrice}>{item.price}</Text>
+          {(order?.items ?? []).map(item => (
+            <View key={`${item.productId}-${item.variantId}`} style={styles.itemRow}>
+              <Text style={styles.itemName}>
+                {item.name} {item.quantity > 1 ? `×${item.quantity}` : ''}
+              </Text>
+              <Text style={styles.itemPrice}>₹{item.subtotal}</Text>
             </View>
           ))}
           <View style={[styles.itemRow, styles.totalRow]}>
             <Text style={styles.totalLabel}>Total</Text>
             <View style={styles.totalValueRow}>
-              <Text style={styles.totalValue}>₹537</Text>
-              <Badge label="Pre-paid" tone="success" />
+              <Text style={styles.totalValue}>₹{order?.pricing.grandTotal ?? '—'}</Text>
+              <Badge
+                label={order?.paymentMethod === 'cod' ? 'COD' : 'Paid Online'}
+                tone={order?.paymentMethod === 'cod' ? 'warning' : 'success'}
+              />
             </View>
           </View>
         </Card>
 
-        <Card bordered style={[styles.card, styles.earningsCard]}>
-          <Text style={styles.sectionTitle}>Your Earnings</Text>
-          <Text style={styles.earningsValue}>₹82</Text>
-          <Text style={styles.earningsHint}>on delivery</Text>
-          <View style={styles.earningsChips}>
-            <Chip label="Base ₹50" />
-            <Chip label="Distance ₹28" />
-            <Chip label="Incentive ₹4" />
-          </View>
-        </Card>
+        {order?.driverEarnings && (
+          <Card bordered style={[styles.card, styles.earningsCard]}>
+            <Text style={styles.sectionTitle}>Your Earnings</Text>
+            <Text style={styles.earningsValue}>₹{order.driverEarnings.total}</Text>
+            <Text style={styles.earningsHint}>on delivery</Text>
+            <View style={styles.earningsChips}>
+              <Chip label={`Base ₹${order.driverEarnings.base}`} />
+              <Chip label={`Distance ₹${order.driverEarnings.distance}`} />
+              {order.driverEarnings.incentiveBonus > 0 && <Chip label={`Incentive ₹${order.driverEarnings.incentiveBonus}`} />}
+            </View>
+          </Card>
+        )}
       </View>
 
       <View style={styles.footer}>
@@ -152,7 +196,7 @@ const styles = StyleSheet.create({
   actionButtonLabel: {...typography.captionSemibold, color: colors.primary},
   sectionTitle: {...typography.bodySemibold, fontSize: 14, color: colors.textPrimary},
   instructionRow: {flexDirection: 'row', alignItems: 'center', gap: spacing.sm},
-  instructionText: {...typography.label, color: colors.textPrimary},
+  instructionText: {...typography.label, color: colors.textPrimary, flex: 1},
   divider: {height: 1, backgroundColor: colors.border},
   itemRow: {flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colors.border},
   itemName: {...typography.label, color: colors.textPrimary},

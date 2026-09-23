@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
@@ -8,6 +8,7 @@ import { Icon } from '../../icons/Icon';
 import { useStoreSetup } from '../../context/StoreSetupContext';
 import { pickAndUploadCoverImage } from '../../services/storeSetupUpload';
 import { getApiErrorMessage } from '../../services/api';
+import { resolveAssetUrl } from '../../utils/resolveAssetUrl';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'StoreCoverImage'>;
@@ -16,6 +17,7 @@ export function StoreCoverImageScreen({ navigation }: Props) {
   const { data, setCoverImageUploaded } = useStoreSetup();
   const storeName = data.profile?.storeName ?? 'Your Store';
   const [uploading, setUploading] = useState(false);
+  const coverImageUri = data.coverImageUrl ? resolveAssetUrl(data.coverImageUrl) : undefined;
 
   async function handlePick(source: 'camera' | 'gallery') {
     setUploading(true);
@@ -40,8 +42,15 @@ export function StoreCoverImageScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.coverBanner}>
+          {coverImageUri ? (
+            <Image source={{ uri: coverImageUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          ) : null}
           <LinearGradient
-            colors={['#1A4A1A', colors.primary, '#6EC97C']}
+            colors={
+              coverImageUri
+                ? ['rgba(0,0,0,0.45)', 'rgba(0,0,0,0.05)', 'rgba(0,0,0,0.35)']
+                : ['#1A4A1A', colors.primary, '#6EC97C']
+            }
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={StyleSheet.absoluteFill}
@@ -68,12 +77,16 @@ export function StoreCoverImageScreen({ navigation }: Props) {
         <View style={styles.previewCard}>
           <Text style={styles.sectionTitle}>Store Page Preview</Text>
           <View style={styles.previewBanner}>
-            <LinearGradient
-              colors={['#1A4A1A', colors.primary, '#6EC97C']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
+            {coverImageUri ? (
+              <Image source={{ uri: coverImageUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+            ) : (
+              <LinearGradient
+                colors={['#1A4A1A', colors.primary, '#6EC97C']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+            )}
             <View style={styles.previewAvatar}>
               <Icon name="home" size={20} color={colors.white} />
             </View>
@@ -89,6 +102,7 @@ export function StoreCoverImageScreen({ navigation }: Props) {
           {data.coverImageUploaded ? (
             <FileCard
               fileName="Cover image uploaded"
+              thumbnailUri={coverImageUri}
               onReplace={() => handlePick('gallery')}
               onDelete={() => setCoverImageUploaded(false, undefined)}
             />

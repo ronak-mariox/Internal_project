@@ -1,58 +1,51 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'NoResponse'>;
 
-const ATTEMPTS = [
-  {id: 1, time: '3:01 PM'},
-  {id: 2, time: '3:04 PM'},
-  {id: 3, time: '3:07 PM'},
-];
-
 export function NoResponseScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
+
+  const customerName = order?.address.contactName ?? 'Customer';
 
   return (
     <Screen edges={['top', 'bottom']}>
       <View style={styles.header}>
         <Icon name="phone" size={28} color={colors.textSecondary} />
         <Text style={styles.title}>No Response</Text>
-        <Text style={styles.subtitle}>Priya Mehta did not answer after 3 attempts.</Text>
+        <Text style={styles.subtitle}>{`${customerName} did not answer.`}</Text>
         <View style={styles.tagsRow}>
           <View style={styles.tag}>
-            <Text style={styles.tagText}>#{orderId}</Text>
+            <Text style={styles.tagText}>#{order?.orderNumber ?? orderId}</Text>
           </View>
-          <View style={styles.tag}>
-            <Text style={styles.tagTextMuted}>HSR Layout</Text>
-          </View>
+          {!!order?.address.city && (
+            <View style={styles.tag}>
+              <Text style={styles.tagTextMuted}>{order.address.city}</Text>
+            </View>
+          )}
         </View>
       </View>
 
       <ScrollView style={styles.flex} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-        <View style={styles.logCard}>
-          <Text style={styles.logLabel}>ATTEMPT LOG</Text>
-          {ATTEMPTS.map((attempt, index) => (
-            <View key={attempt.id} style={[styles.logRow, index > 0 && styles.logRowBorder]}>
-              <View style={styles.logLeft}>
-                <View style={styles.logCheck}>
-                  <Icon name="check" size={12} color={colors.textSecondary} />
-                </View>
-                <Text style={styles.logAttempt}>Attempt {attempt.id}</Text>
-              </View>
-              <View style={styles.logRight}>
-                <Text style={styles.logTime}>{attempt.time}</Text>
-                <View style={styles.logBadge}>
-                  <Text style={styles.logBadgeText}>No answer</Text>
-                </View>
-              </View>
-            </View>
-          ))}
-        </View>
-
         <Text style={styles.sectionLabel}>What to do now</Text>
 
         <TouchableOpacity
@@ -115,17 +108,6 @@ const styles = StyleSheet.create({
   tagTextMuted: {...typography.caption, color: colors.textSecondary},
   flex: {flex: 1},
   body: {padding: spacing.lg, gap: spacing.sm},
-  logCard: {backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm},
-  logLabel: {...typography.captionMedium, fontSize: 12, color: colors.textSecondary, letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: spacing.sm},
-  logRow: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: spacing.xs},
-  logRowBorder: {borderTopWidth: 1, borderTopColor: colors.border, borderStyle: 'dashed'},
-  logLeft: {flexDirection: 'row', alignItems: 'center', gap: spacing.sm},
-  logCheck: {width: 22, height: 22, borderRadius: 11, backgroundColor: colors.border, alignItems: 'center', justifyContent: 'center'},
-  logAttempt: {...typography.labelSemibold, fontSize: 13, color: colors.textPrimary},
-  logRight: {flexDirection: 'row', alignItems: 'center', gap: spacing.sm},
-  logTime: {...typography.label, fontSize: 13, color: colors.textSecondary},
-  logBadge: {backgroundColor: colors.dangerSurface, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2},
-  logBadgeText: {...typography.captionMedium, fontSize: 12, color: colors.danger},
   sectionLabel: {...typography.bodySemibold, fontSize: 13, color: colors.textPrimary},
   optionRow: {flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.surface, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.md},
   optionRowWarning: {borderWidth: 1.5, borderColor: colors.warning},

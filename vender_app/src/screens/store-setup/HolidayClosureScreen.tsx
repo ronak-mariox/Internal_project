@@ -25,17 +25,6 @@ export function HolidayClosureScreen({ navigation }: Props) {
     addHoliday(created);
   }
 
-  async function handleAddHoliday() {
-    setBusy(true);
-    try {
-      await createHoliday({ title: 'New Holiday', date: 'Select date', daysClosed: 1, note: 'Custom closure' });
-    } catch (err) {
-      Alert.alert('Could not add holiday', getApiErrorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function handleRemoveHoliday(id: string) {
     setBusy(true);
     try {
@@ -77,7 +66,7 @@ export function HolidayClosureScreen({ navigation }: Props) {
           <Text style={styles.subtitle}>Block out dates when your store won't be accepting orders</Text>
         </View>
 
-        <Pressable style={styles.addButton} disabled={busy} onPress={handleAddHoliday}>
+        <Pressable style={styles.addButton} disabled={busy} onPress={() => navigation.navigate('HolidayForm')}>
           <View style={styles.addIcon}>
             <Icon name="plus" size={18} color={colors.primary} />
           </View>
@@ -105,7 +94,7 @@ export function HolidayClosureScreen({ navigation }: Props) {
                 <View style={styles.closureActions}>
                   <Pressable
                     hitSlop={6}
-                    onPress={() => Alert.alert('Edit closure', 'Editing coming soon.')}
+                    onPress={() => navigation.navigate('HolidayForm', { holidayId: item.id })}
                   >
                     <Icon name="edit" size={15} color={colors.textSecondary} />
                   </Pressable>

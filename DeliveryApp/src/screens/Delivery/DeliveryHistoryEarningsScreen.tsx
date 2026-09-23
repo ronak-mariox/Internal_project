@@ -1,84 +1,102 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
-import {Icon, IconBackButton} from '../../components';
+import {EmptyState, Icon, IconBackButton, Loader} from '../../components';
 import {colors, radius, shadows, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'DeliveryHistoryEarnings'>;
 
-const BREAKDOWN_ROWS = [
-  {label: 'Base fare', sub: undefined, value: '₹50.00'},
-  {label: 'Distance', sub: '3.6 km × ₹7', value: '₹25.20'},
-  {label: 'Pickup bonus', sub: undefined, value: '₹4.00'},
-  {label: 'On-time bonus', sub: undefined, value: '₹2.80'},
-];
+function formatDateTime(iso?: string): string {
+  if (!iso) {
+    return '';
+  }
+  const d = new Date(iso);
+  return `${d.toLocaleDateString([], {month: 'short', day: 'numeric'})}, ${d.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}`;
+}
 
 export function DeliveryHistoryEarningsScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    getOrder(orderId)
+      .then(o => { if (!cancelled) setOrder(o); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [orderId, getOrder]);
+
+  const earnings = order?.driverEarnings;
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <IconBackButton onPress={() => navigation.goBack()} />
-        <Text style={styles.headerTitle}>Earnings #{orderId}</Text>
+        <Text style={styles.headerTitle}>{`Earnings #${order?.orderNumber ?? orderId}`}</Text>
       </View>
 
-      <ScrollView style={styles.flex} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-        <View style={styles.heroCard}>
-          <Text style={styles.heroLabel}>TOTAL EARNED</Text>
-          <Text style={styles.heroValue}>₹82</Text>
-          <Text style={styles.heroSub}>For delivery #{orderId}</Text>
-        </View>
+      {loading && <Loader label="Loading earnings…" fullscreen />}
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Earnings Breakdown</Text>
-          {BREAKDOWN_ROWS.map((row, index) => (
-            <View key={row.label} style={[styles.row, index < BREAKDOWN_ROWS.length - 1 && styles.rowBorder]}>
-              <View>
-                <Text style={styles.rowLabel}>{row.label}</Text>
-                {row.sub && <Text style={styles.rowSub}>{row.sub}</Text>}
-              </View>
-              <Text style={styles.rowValue}>{row.value}</Text>
-            </View>
-          ))}
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Total</Text>
-            <Text style={styles.totalValue}>₹82.00</Text>
-          </View>
-        </View>
+      {!loading && !earnings && (
+        <EmptyState icon="alert-triangle" title="No earnings available" description="This delivery has no earnings recorded yet." />
+      )}
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Payment Status</Text>
-          <View style={styles.row}>
-            <Text style={styles.rowLabelMuted}>Method</Text>
-            <Text style={styles.rowValueDark}>HDFC UPI</Text>
+      {!loading && earnings && (
+        <ScrollView style={styles.flex} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
+          <View style={styles.heroCard}>
+            <Text style={styles.heroLabel}>TOTAL EARNED</Text>
+            <Text style={styles.heroValue}>{`₹${earnings.total}`}</Text>
+            <Text style={styles.heroSub}>{`For delivery #${order?.orderNumber ?? orderId}`}</Text>
           </View>
-          <View style={styles.row}>
-            <Text style={styles.rowLabelMuted}>Transaction ID</Text>
-            <Text style={styles.rowValueDark}>TXN-8840291</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.rowLabelMuted}>Credited on</Text>
-            <Text style={styles.rowValueGreen}>Sep 9, 11:43 AM</Text>
-          </View>
-        </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Related Delivery</Text>
-          <TouchableOpacity style={styles.relatedRow} activeOpacity={0.7} onPress={() => navigation.navigate('DeliveryHistoryDetail', {orderId})}>
-            <View style={styles.flex}>
-              <Text style={styles.relatedOrderId}>#{orderId}</Text>
-              <Text style={styles.relatedRoute}>Swiggy Instamart → HSR Layout</Text>
-              <Text style={styles.relatedTime}>Sep 6, 3:04 PM · 22 min</Text>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Earnings Breakdown</Text>
+            <View style={[styles.row, styles.rowBorder]}>
+              <Text style={styles.rowLabel}>Base fare</Text>
+              <Text style={styles.rowValue}>{`₹${earnings.base}`}</Text>
             </View>
-            <View style={styles.relatedLink}>
-              <Text style={styles.relatedLinkText}>View Delivery</Text>
-              <Icon name="chevron-right" size={14} color={colors.primary} />
+            <View style={[styles.row, styles.rowBorder]}>
+              <Text style={styles.rowLabel}>Distance</Text>
+              <Text style={styles.rowValue}>{`₹${earnings.distance}`}</Text>
             </View>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
+            <View style={[styles.row, styles.rowBorder]}>
+              <Text style={styles.rowLabel}>On-time bonus</Text>
+              <Text style={styles.rowValue}>{`₹${earnings.onTimeBonus}`}</Text>
+            </View>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Incentive</Text>
+              <Text style={styles.rowValue}>{`₹${earnings.incentiveBonus}`}</Text>
+            </View>
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Total</Text>
+              <Text style={styles.totalValue}>{`₹${earnings.total}`}</Text>
+            </View>
+          </View>
+
+          {order && (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Related Delivery</Text>
+              <TouchableOpacity style={styles.relatedRow} activeOpacity={0.7} onPress={() => navigation.navigate('DeliveryHistoryDetail', {orderId})}>
+                <View style={styles.flex}>
+                  <Text style={styles.relatedOrderId}>#{order.orderNumber}</Text>
+                  <Text style={styles.relatedRoute}>{`${order.pickup.name} → ${order.address.city}`}</Text>
+                  <Text style={styles.relatedTime}>{formatDateTime(order.deliveredAt)}</Text>
+                </View>
+                <View style={styles.relatedLink}>
+                  <Text style={styles.relatedLinkText}>View Delivery</Text>
+                  <Icon name="chevron-right" size={14} color={colors.primary} />
+                </View>
+              </TouchableOpacity>
+            </View>
+          )}
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -108,11 +126,7 @@ const styles = StyleSheet.create({
   row: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing.sm, borderBottomColor: '#F3F4F6'},
   rowBorder: {borderBottomWidth: 1},
   rowLabel: {...typography.label, fontSize: 13, color: colors.textPrimary},
-  rowSub: {...typography.caption, fontSize: 11, color: colors.textMuted, marginTop: 1},
   rowValue: {...typography.labelSemibold, fontSize: 13, color: colors.textPrimary},
-  rowLabelMuted: {...typography.caption, fontSize: 12, color: colors.textSecondary},
-  rowValueDark: {...typography.captionMedium, fontSize: 12, color: colors.textPrimary},
-  rowValueGreen: {...typography.captionMedium, fontSize: 12, color: colors.primary},
   totalRow: {flexDirection: 'row', justifyContent: 'space-between', paddingTop: spacing.md, marginTop: spacing.xs},
   totalLabel: {...typography.bodyBold, fontSize: 15, color: colors.textPrimary},
   totalValue: {...typography.bodyBold, fontSize: 15, color: colors.primary},

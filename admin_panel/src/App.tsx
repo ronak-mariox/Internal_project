@@ -16,6 +16,7 @@ import { Customers } from '@/pages/Customers';
 import { CustomerDetail } from '@/pages/CustomerDetail';
 import { Offers } from '@/pages/Offers';
 import { Settlements } from '@/pages/Settlements';
+import { BankDetailsRequests } from '@/pages/BankDetailsRequests';
 import { Analytics } from '@/pages/Analytics';
 import { Notifications } from '@/pages/Notifications';
 import { Support } from '@/pages/Support';
@@ -42,6 +43,7 @@ export default function App() {
               <Route path="/customers/:customerId" element={<CustomerDetail />} />
               <Route path="/offers" element={<Offers />} />
               <Route path="/settlements" element={<Settlements />} />
+              <Route path="/bank-details-requests" element={<BankDetailsRequests />} />
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/notifications" element={<Notifications />} />
               <Route path="/support" element={<Support />} />

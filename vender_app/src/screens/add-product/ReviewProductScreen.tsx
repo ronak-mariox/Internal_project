@@ -11,12 +11,15 @@ import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 type Props = NativeStackScreenProps<AuthStackParamList, 'ReviewProduct'>;
 
 export function ReviewProductScreen({ navigation }: Props) {
-  const { draft } = useProductDraft();
+  const { draft, effectivePricing } = useProductDraft();
   const basicInfo = draft.basicInfo;
-  const pricing = draft.pricing;
+  // Falls back to the primary variant's price when this is an attribute-kind product
+  // (e.g. Fashion sizes), where pricing is set per-variant and draft.pricing stays empty.
+  const pricing = effectivePricing;
   const identifiers = draft.identifiers;
   const stock = draft.stock;
   const category = draft.category;
+  const variantCount = draft.packSize?.variants?.length ?? 0;
   const gstLabel = draft.tax?.gstRate === '0' ? '0% (Exempt)' : draft.tax?.gstRate ? `${draft.tax.gstRate}%` : '—';
   const discountPercent =
     pricing && parseFloat(pricing.mrp) > parseFloat(pricing.sellingPrice || '0') && parseFloat(pricing.mrp) > 0
@@ -90,6 +93,7 @@ export function ReviewProductScreen({ navigation }: Props) {
             { label: 'Selling Price', value: pricing?.sellingPrice ? `₹${parseFloat(pricing.sellingPrice).toFixed(2)}` : '—' },
             { label: 'Discount', value: `${discountPercent}%` },
             { label: 'GST', value: gstLabel },
+            ...(variantCount > 1 ? [{ label: 'Note', value: `Primary of ${variantCount} variants shown` }] : []),
           ]}
         />
 

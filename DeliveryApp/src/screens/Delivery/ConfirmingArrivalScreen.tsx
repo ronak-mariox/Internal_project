@@ -1,19 +1,37 @@
-import React, {useEffect} from 'react';
+import React, {useEffect, useState} from 'react';
 import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ConfirmingArrival'>;
 
 export function ConfirmingArrivalScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
 
   useEffect(() => {
     const timer = setTimeout(() => navigation.replace('ArrivedAtStore', {orderId}), 1800);
     return () => clearTimeout(timer);
   }, [navigation, orderId]);
+
+  const storeName = order?.pickup.name ?? 'the store';
+  const itemCount = order?.items.length ?? 0;
 
   return (
     <Screen edges={['top', 'bottom']} contentContainerStyle={styles.container}>
@@ -26,7 +44,7 @@ export function ConfirmingArrivalScreen({route, navigation}: Props) {
       </View>
 
       <Text style={styles.title}>Confirming Your Arrival</Text>
-      <Text style={styles.subtitle}>Notifying Swiggy Instamart, Koramangala…</Text>
+      <Text style={styles.subtitle}>Notifying {storeName}…</Text>
 
       <View style={styles.dots}>
         <View style={styles.dot} />
@@ -37,16 +55,20 @@ export function ConfirmingArrivalScreen({route, navigation}: Props) {
       <View style={styles.card}>
         <View style={styles.orderIdRow}>
           <Text style={styles.orderIdLabel}>Order ID</Text>
-          <Text style={styles.orderIdValue}>#{orderId}</Text>
+          <Text style={styles.orderIdValue}>#{order?.orderNumber ?? orderId}</Text>
         </View>
         <View style={styles.infoRow}>
           <Icon name="store" size={14} color={colors.textSecondary} />
-          <Text style={styles.infoText}>Swiggy Instamart, Koramangala</Text>
+          <Text style={styles.infoText}>{storeName}</Text>
         </View>
-        <View style={styles.infoRow}>
-          <Icon name="package" size={14} color={colors.textSecondary} />
-          <Text style={styles.infoText}>3 items · ₹537 · Pre-paid</Text>
-        </View>
+        {order && (
+          <View style={styles.infoRow}>
+            <Icon name="package" size={14} color={colors.textSecondary} />
+            <Text style={styles.infoText}>
+              {itemCount} item{itemCount === 1 ? '' : 's'} · ₹{order.pricing.grandTotal} · {order.paymentMethod === 'cod' ? 'COD' : 'Paid Online'}
+            </Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.noteRow}>

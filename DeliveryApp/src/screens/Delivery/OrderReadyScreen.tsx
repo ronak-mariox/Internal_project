@@ -1,25 +1,37 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {ScrollView, StyleSheet, Text, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'OrderReady'>;
 
-const ITEMS = [
-  {name: 'Almonds 500g', price: '₹299'},
-  {name: 'Greek Yogurt', price: '₹89'},
-  {name: 'Oats 1kg', price: '₹149'},
-];
-
 export function OrderReadyScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
+
+  const itemCount = order?.items.reduce((sum, item) => sum + item.quantity, 0) ?? 0;
+  const storeName = order?.pickup.name ?? 'Store';
 
   return (
     <Screen backgroundColor={colors.primary} statusBarStyle="light-content" edges={['top', 'bottom']}>
       <View style={styles.header}>
-        <Text style={styles.headerStore}>Swiggy Instamart, Koramangala</Text>
+        <Text style={styles.headerStore}>{storeName}</Text>
         <Text style={styles.headerTitle}>Order is Ready!</Text>
       </View>
 
@@ -32,14 +44,14 @@ export function OrderReadyScreen({route, navigation}: Props) {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.cardLabel}>ORDER ITEMS</Text>
-          {ITEMS.map(item => (
-            <View key={item.name} style={styles.itemRow}>
+          <Text style={styles.cardLabel}>ORDER ITEMS ({itemCount})</Text>
+          {(order?.items ?? []).map((item) => (
+            <View key={`${item.productId}-${item.variantId}`} style={styles.itemRow}>
               <View style={styles.itemCheck}>
                 <Icon name="check" size={12} color={colors.primary} />
               </View>
               <Text style={styles.itemText}>
-                {item.name} · {item.price}
+                {item.name} {item.variantLabel ? `(${item.variantLabel})` : ''} × {item.quantity} · ₹{item.subtotal}
               </Text>
             </View>
           ))}
@@ -48,17 +60,6 @@ export function OrderReadyScreen({route, navigation}: Props) {
         <View style={styles.noteCard}>
           <Icon name="shield" size={16} color={colors.textSecondary} />
           <Text style={styles.noteText}>Store staff will hand over the package at checkout counter</Text>
-        </View>
-
-        <View style={styles.tagsRow}>
-          <View style={styles.tag}>
-            <Icon name="package" size={16} color={colors.textPrimary} />
-            <Text style={styles.tagText}>1 bag</Text>
-          </View>
-          <View style={styles.tag}>
-            <Icon name="package" size={16} color={colors.textPrimary} />
-            <Text style={styles.tagText}>~2.3 kg</Text>
-          </View>
         </View>
       </ScrollView>
 
@@ -106,12 +107,9 @@ const styles = StyleSheet.create({
   cardLabel: {...typography.overline, color: colors.textSecondary, letterSpacing: 0.8, marginBottom: spacing.sm},
   itemRow: {flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xs},
   itemCheck: {width: 20, height: 20, borderRadius: 10, backgroundColor: colors.successSurface, alignItems: 'center', justifyContent: 'center'},
-  itemText: {...typography.body, color: colors.textPrimary},
+  itemText: {...typography.body, color: colors.textPrimary, flex: 1},
   noteCard: {flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.md},
   noteText: {...typography.label, color: colors.textSecondary, flex: 1},
-  tagsRow: {flexDirection: 'row', gap: spacing.sm},
-  tag: {flexDirection: 'row', alignItems: 'center', gap: spacing.xs, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, paddingHorizontal: spacing.md, paddingVertical: spacing.sm},
-  tagText: {...typography.labelSemibold, color: colors.textPrimary},
   footer: {flexDirection: 'row', gap: spacing.sm, padding: spacing.lg, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border},
   verifyButton: {flex: 1},
   collectButton: {flex: 2},

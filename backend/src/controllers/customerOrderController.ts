@@ -5,9 +5,12 @@ import { Product, type ProductDoc } from '../models/Product';
 import { Address } from '../models/Address';
 import { Coupon } from '../models/Coupon';
 import { Order, type OrderItemSnapshot } from '../models/Order';
+import { Offer } from '../models/Offer';
+import { Rating } from '../models/Rating';
 import { HttpError } from '../lib/httpError';
 import { toSafeJson } from '../lib/sanitize';
 import { evaluateCoupon, computeOrderPricing, findVariant, priceLine } from '../lib/pricing';
+import { resolveAppliedOffers } from '../lib/offers';
 import { CANCELLABLE_STATUSES } from '../lib/orderStatus';
 import { notifyCustomer, notifyOrderStatusChange } from '../lib/notify';
 import { notifyVendor } from '../lib/vendorNotify';
@@ -84,7 +87,15 @@ export async function createOrder(req: Request, res: Response) {
     throw new HttpError(422, 'Your cart has items from multiple stores — checkout one store at a time');
   }
 
-  const pricedLines = lines.map((l) => priceLine(l.product, findVariant(l.product, l.variantId)!, l.quantity));
+  const appliedOffers = await resolveAppliedOffers(
+    lines.map(({ product, variantId, quantity }) => ({
+      product,
+      unitPrice: findVariant(product, variantId)!.price,
+      quantity,
+    })),
+    customerId,
+  );
+  const pricedLines = lines.map((l, i) => priceLine(l.product, findVariant(l.product, l.variantId)!, l.quantity, appliedOffers[i]));
   const itemsTotal = pricedLines.reduce((sum, l) => sum + l.subtotal, 0);
 
   let discount = 0;
@@ -110,6 +121,8 @@ export async function createOrder(req: Request, res: Response) {
     mrp: l.variant.mrp,
     quantity: l.quantity,
     subtotal: l.subtotal,
+    offerId: l.offerId as never,
+    originalSubtotal: l.originalSubtotal,
   }));
 
   let order;
@@ -153,6 +166,11 @@ export async function createOrder(req: Request, res: Response) {
 
   if (coupon) await Coupon.updateOne({ _id: coupon._id }, { $inc: { usedCount: 1 } });
 
+  for (const l of pricedLines) {
+    if (!l.offerId) continue;
+    await Offer.updateOne({ _id: l.offerId }, { $inc: { usesCount: 1, revenueGenerated: l.subtotal } });
+  }
+
   cart.items = [];
   cart.couponCode = undefined;
   await cart.save();
@@ -172,18 +190,18 @@ export async function createOrder(req: Request, res: Response) {
     { orderId: order._id },
   );
 
-  res.status(201).json(toSafeJson(order));
+  res.status(201).json(toSafeJson(order, ['deliveryOtpHash']));
 }
 
 export async function listOrders(req: Request, res: Response) {
   const orders = await Order.find({ customerId: req.user!.id }).sort({ createdAt: -1 });
-  res.json(orders.map((o) => toSafeJson(o)));
+  res.json(orders.map((o) => toSafeJson(o, ['deliveryOtpHash'])));
 }
 
 export async function getOrder(req: Request, res: Response) {
   const order = await Order.findOne({ _id: req.params.id, customerId: req.user!.id });
   if (!order) throw new HttpError(404, 'Order not found');
-  res.json(toSafeJson(order));
+  res.json(toSafeJson(order, ['deliveryOtpHash']));
 }
 
 export async function cancelOrder(req: Request, res: Response) {
@@ -213,5 +231,30 @@ export async function cancelOrder(req: Request, res: Response) {
     { orderId: order._id },
   );
 
-  res.json(toSafeJson(order));
+  res.json(toSafeJson(order, ['deliveryOtpHash']));
+}
+
+export async function rateOrder(req: Request, res: Response) {
+  const order = await Order.findOne({ _id: req.params.id, customerId: req.user!.id });
+  if (!order) throw new HttpError(404, 'Order not found');
+  if (order.status !== 'delivered') {
+    throw new HttpError(409, 'Only delivered orders can be rated');
+  }
+  if (!order.driverId) {
+    throw new HttpError(409, 'This order has no delivery driver to rate');
+  }
+
+  const existing = await Rating.findOne({ orderId: order._id as never });
+  if (existing) throw new HttpError(409, 'This order has already been rated');
+
+  const { stars, reviewText } = req.body as { stars: number; reviewText?: string };
+  const rating = await Rating.create({
+    orderId: order._id as never,
+    driverId: order.driverId,
+    customerId: req.user!.id,
+    stars,
+    reviewText,
+  });
+
+  res.status(201).json(toSafeJson(rating));
 }

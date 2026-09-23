@@ -116,6 +116,23 @@ export async function addHoliday(req: Request, res: Response) {
   res.status(201).json(holiday);
 }
 
+export async function updateHoliday(req: Request, res: Response) {
+  const vendor = await loadApprovedVendor(req.user!.id);
+  const holiday = vendor.holidays.find((h) => h.id === req.params.id);
+  if (!holiday) {
+    res.status(404).json({ error: 'Holiday not found' });
+    return;
+  }
+  const { title, date, daysClosed, note } = req.body;
+  holiday.title = title;
+  holiday.date = date;
+  holiday.daysClosed = daysClosed;
+  holiday.note = note;
+  vendor.markModified('holidays');
+  await vendor.save();
+  res.json(holiday);
+}
+
 export async function removeHoliday(req: Request, res: Response) {
   const vendor = await loadApprovedVendor(req.user!.id);
   vendor.holidays = vendor.holidays.filter((h) => h.id !== req.params.id);

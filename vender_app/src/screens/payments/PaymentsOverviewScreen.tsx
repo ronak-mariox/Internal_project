@@ -17,6 +17,10 @@ function formatINR(amount: number) {
   return `₹${Math.round(amount).toLocaleString('en-IN')}`;
 }
 
+function currentMonthLabel(): string {
+  return new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
+
 export function PaymentsOverviewScreen({ navigation }: Props) {
   const { settlements } = usePayments();
   const [period, setPeriod] = useState<PaymentsPeriod>('month');
@@ -37,17 +41,21 @@ export function PaymentsOverviewScreen({ navigation }: Props) {
   const recentTransactions = useMemo(() => settlements.slice(0, 3), [settlements]);
   const latestSettlementId = settlements[0]?.id ?? '';
 
-  const deductionsTotal = Math.max(totalSales - netPayoutTotal, 0);
+  const commissionTotal = useMemo(
+    () => settlements.reduce((sum, s) => sum + s.commission + s.gstOnCommission, 0),
+    [settlements],
+  );
+  const adjustmentsTotal = useMemo(() => settlements.reduce((sum, s) => sum + s.adjustments, 0), [settlements]);
+
   const netRatio = totalSales > 0 ? netPayoutTotal / totalSales : 1;
-  const deductionRatio = totalSales > 0 ? deductionsTotal / totalSales : 0;
-  const commissionRatio = deductionRatio * 0.65;
-  const adjustmentRatio = deductionRatio * 0.35;
+  const commissionRatio = totalSales > 0 ? commissionTotal / totalSales : 0;
+  const adjustmentRatio = totalSales > 0 ? adjustmentsTotal / totalSales : 0;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <View style={styles.headerBlock}>
         <Text style={styles.title}>Payments & Settlements</Text>
-        <Text style={styles.subtitle}>November 2024</Text>
+        <Text style={styles.subtitle}>{currentMonthLabel()}</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>

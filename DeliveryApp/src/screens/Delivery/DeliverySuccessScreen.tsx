@@ -1,9 +1,10 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, Card, Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'DeliverySuccess'>;
 
@@ -18,10 +19,46 @@ const CONFETTI = [
   {color: '#FCD34D', left: '68%', top: 70},
 ] as const;
 
+function formatTime(iso?: string): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+}
+
+function formatDuration(startIso?: string, endIso?: string): string | null {
+  if (!startIso || !endIso) return null;
+  const start = new Date(startIso).getTime();
+  const end = new Date(endIso).getTime();
+  if (Number.isNaN(start) || Number.isNaN(end) || end < start) return null;
+  const minutes = Math.max(1, Math.round((end - start) / 60000));
+  return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+}
+
 export function DeliverySuccessScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
 
   const goHome = () => navigation.reset({index: 0, routes: [{name: 'Home'}]});
+
+  const customerName = order?.address.contactName ?? 'Customer';
+  const addressLine = order ? [order.address.line1, order.address.city].filter(Boolean).join(', ') : null;
+  const deliveryTime = formatTime(order?.deliveredAt);
+  const timeTaken = formatDuration(order?.pickupConfirmedAt, order?.deliveredAt);
+  const earnings = order?.driverEarnings;
 
   return (
     <Screen backgroundColor={colors.surface} statusBarStyle="light-content" edges={['top', 'bottom']} scroll>
@@ -33,35 +70,35 @@ export function DeliverySuccessScreen({route, navigation}: Props) {
           <Icon name="check" size={40} color={colors.white} />
         </View>
         <Text style={styles.title}>Delivered!</Text>
-        <Text style={styles.subtitle}>Order #{orderId}</Text>
+        <Text style={styles.subtitle}>Order #{order?.orderNumber ?? orderId}</Text>
       </View>
 
       <View style={styles.body}>
         <Card style={styles.summaryCard}>
           <Text style={styles.summaryTitle}>Delivery Summary</Text>
-          <SummaryRow label="Delivered to" value="Priya Mehta" />
-          <SummaryRow label="Address" value="HSR Layout Sector 2" />
-          <SummaryRow label="Delivery time" value="3:04 PM" />
-          <SummaryRow label="Time taken" value="22 minutes" last />
+          <SummaryRow label="Delivered to" value={customerName} />
+          {!!addressLine && <SummaryRow label="Address" value={addressLine} />}
+          {!!deliveryTime && <SummaryRow label="Delivery time" value={deliveryTime} />}
+          <SummaryRow label="Time taken" value={timeTaken ?? '—'} last />
         </Card>
 
-        <Card style={styles.earningsCard}>
-          <Text style={styles.earningsTitle}>Earnings</Text>
-          <Text style={styles.earningsValue}>₹82 earned</Text>
-          <SummaryRow label="Base pay" value="₹50" light />
-          <SummaryRow label="Distance bonus" value="₹28" light />
-          <SummaryRow label="On-time bonus" value="₹4" light />
-          <View style={styles.earningsDivider} />
-          <View style={styles.summaryRow}>
-            <Text style={styles.earningsTotalLabel}>Total today (after this)</Text>
-            <Text style={styles.earningsTotalValue}>₹428</Text>
+        {!!earnings && (
+          <Card style={styles.earningsCard}>
+            <Text style={styles.earningsTitle}>Earnings</Text>
+            <Text style={styles.earningsValue}>₹{earnings.total} earned</Text>
+            <SummaryRow label="Base pay" value={`₹${earnings.base}`} light />
+            <SummaryRow label="Distance bonus" value={`₹${earnings.distance}`} light />
+            {earnings.onTimeBonus > 0 && <SummaryRow label="On-time bonus" value={`₹${earnings.onTimeBonus}`} light />}
+            {earnings.incentiveBonus > 0 && <SummaryRow label="Incentive bonus" value={`₹${earnings.incentiveBonus}`} light />}
+          </Card>
+        )}
+
+        {!!earnings && earnings.onTimeBonus > 0 && (
+          <View style={styles.onTimeBanner}>
+            <Icon name="star" size={20} color={colors.warning} filled />
+            <Text style={styles.onTimeText}>{'On-time Delivery ✓'}</Text>
           </View>
-        </Card>
-
-        <View style={styles.onTimeBanner}>
-          <Icon name="star" size={20} color={colors.warning} filled />
-          <Text style={styles.onTimeText}>{'On-time Delivery ✓'}</Text>
-        </View>
+        )}
       </View>
 
       <View style={styles.footer}>

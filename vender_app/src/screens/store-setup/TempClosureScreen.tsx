@@ -6,9 +6,12 @@ import { Button, FormSectionCard, Input, NavHeader, ScreenContainer, SelectField
 import { Icon } from '../../icons/Icon';
 import { useStoreSetup, type TempClosureData } from '../../context/StoreSetupContext';
 import { TIME_OPTIONS } from '../../utils/time';
+import { isRequired, type FormErrors } from '../../utils/validators';
 import { colors, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'TempClosure'>;
+
+type Errors = FormErrors<'reason' | 'fromDate' | 'toDate'>;
 
 const REASONS = ['Festival / Holiday', 'Maintenance', 'Staff Shortage', 'Personal Emergency', 'Other'];
 
@@ -25,12 +28,23 @@ export function TempClosureScreen({ navigation }: Props) {
       notifyCustomers: true,
     },
   );
+  const [errors, setErrors] = useState<Errors>({});
 
   function set<K extends keyof TempClosureData>(key: K, value: TempClosureData[K]) {
     setForm(prev => ({ ...prev, [key]: value }));
+    if (key === 'reason' && errors.reason) setErrors(prev => ({ ...prev, reason: undefined }));
+    if (key === 'fromDate' && errors.fromDate) setErrors(prev => ({ ...prev, fromDate: undefined }));
+    if (key === 'toDate' && errors.toDate) setErrors(prev => ({ ...prev, toDate: undefined }));
   }
 
   function handleCloseStore() {
+    const nextErrors: Errors = {};
+    if (!isRequired(form.reason)) nextErrors.reason = 'Select a reason';
+    if (!isRequired(form.fromDate)) nextErrors.fromDate = 'Required';
+    if (!isRequired(form.toDate)) nextErrors.toDate = 'Required';
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+
     updateTempClosure(form);
     navigation.navigate('ClosureConfirmation');
   }
@@ -51,7 +65,14 @@ export function TempClosureScreen({ navigation }: Props) {
         </View>
 
         <FormSectionCard title="Closure Details">
-          <SelectField label="Reason for Closure" required value={form.reason} options={REASONS} onChange={value => set('reason', value)} />
+          <SelectField
+            label="Reason for Closure"
+            required
+            value={form.reason}
+            options={REASONS}
+            onChange={value => set('reason', value)}
+            error={errors.reason}
+          />
           <Input
             label="Custom Message for Customers"
             value={form.customMessage}
@@ -64,11 +85,21 @@ export function TempClosureScreen({ navigation }: Props) {
           <View style={styles.row}>
             <View style={styles.rowItem}>
               <Text style={styles.label}>From</Text>
-              <Input value={form.fromDate} onChangeText={text => set('fromDate', text)} leftIcon="calendar" />
+              <Input
+                value={form.fromDate}
+                onChangeText={text => set('fromDate', text)}
+                leftIcon="calendar"
+                error={errors.fromDate}
+              />
             </View>
             <View style={styles.rowItem}>
               <Text style={styles.label}>To</Text>
-              <Input value={form.toDate} onChangeText={text => set('toDate', text)} leftIcon="calendar" />
+              <Input
+                value={form.toDate}
+                onChangeText={text => set('toDate', text)}
+                leftIcon="calendar"
+                error={errors.toDate}
+              />
             </View>
           </View>
           <View style={styles.row}>

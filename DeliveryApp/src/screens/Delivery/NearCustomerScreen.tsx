@@ -1,14 +1,34 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {StyleSheet, Text, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
-import {Badge, Button, Icon, Screen} from '../../components';
+import {Button, Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'NearCustomer'>;
 
 export function NearCustomerScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
+
+  const customerName = order?.address.contactName ?? 'Customer';
+  const addressLine = order
+    ? [order.address.line1, order.address.line2].filter(Boolean).join(', ')
+    : '';
 
   return (
     <Screen edges={['top', 'bottom']} contentContainerStyle={styles.container}>
@@ -23,13 +43,12 @@ export function NearCustomerScreen({route, navigation}: Props) {
           </View>
         </View>
 
-        <Text style={styles.title}>0.4 km away</Text>
+        <Text style={styles.title}>Arriving at customer</Text>
 
         <View style={styles.card}>
-          <Text style={styles.customerName}>Priya Mehta</Text>
-          <Text style={styles.customerArea}>HSR Layout Sector 2</Text>
-          <Text style={styles.customerAddress}>Apt 4B, Tower C, Prestige Lakeside</Text>
-          <Badge label="Arriving in ~2 min" tone="success" />
+          <Text style={styles.customerName}>{customerName}</Text>
+          {!!order?.address.city && <Text style={styles.customerArea}>{order.address.city}</Text>}
+          {!!addressLine && <Text style={styles.customerAddress}>{addressLine}</Text>}
         </View>
 
         <View style={styles.infoBanner}>
@@ -37,10 +56,12 @@ export function NearCustomerScreen({route, navigation}: Props) {
           <Text style={styles.infoText}>Customer has been notified of your arrival.</Text>
         </View>
 
-        <View style={styles.warningBanner}>
-          <Icon name="alert-triangle" size={16} color={colors.warning} />
-          <Text style={styles.warningText}>Leave at door if no answer · Gate code: #1204</Text>
-        </View>
+        {!!order?.specialInstructions && (
+          <View style={styles.warningBanner}>
+            <Icon name="alert-triangle" size={16} color={colors.warning} />
+            <Text style={styles.warningText}>{order.specialInstructions}</Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.footer}>
@@ -64,7 +85,7 @@ const styles = StyleSheet.create({
   ringOuter: {width: 180, height: 180},
   ringMid: {width: 130, height: 130, backgroundColor: 'rgba(28,166,114,0.14)'},
   iconInner: {width: 60, height: 60, borderRadius: 30, backgroundColor: colors.surface, borderWidth: 2, borderColor: colors.primary, alignItems: 'center', justifyContent: 'center'},
-  title: {...typography.h1, fontSize: 28, color: colors.primary, marginBottom: spacing.sm},
+  title: {...typography.h1, fontSize: 26, color: colors.primary, marginBottom: spacing.sm, textAlign: 'center'},
   card: {width: '100%', alignItems: 'center', backgroundColor: colors.background, borderRadius: radius.xxl, padding: spacing.xl, gap: spacing.xs},
   customerName: {...typography.title, fontSize: 18, color: colors.textPrimary},
   customerArea: {...typography.label, color: colors.textSecondary},

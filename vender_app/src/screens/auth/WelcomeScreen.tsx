@@ -1,7 +1,6 @@
 import React from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
-import Svg, { Circle, Rect } from 'react-native-svg';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { Button, ScreenContainer } from '../../components';
@@ -43,12 +42,11 @@ export function WelcomeScreen({ navigation }: Props) {
                 { backgroundColor: '#B8E4FF' },
               ]}
             >
-              <Svg width={72} height={100} viewBox="0 0 72 100">
-                <Rect x={18} y={18} width={36} height={64} rx={8} fill="#2E75B6" />
-                <Rect x={22} y={24} width={28} height={46} rx={3} fill="#EAF6FF" />
-                <Circle cx={36} cy={20} r={1.6} fill="#EAF6FF" />
-                <Rect x={30} y={74} width={12} height={3} rx={1.5} fill="#EAF6FF" />
-              </Svg>
+              <Image
+                source={require('../../assets/images/welcome-electronics.png')}
+                style={styles.categoryImg}
+                resizeMode="cover"
+              />
             </View>
             <Text style={styles.categoryLabel}>Electronics</Text>
           </View>

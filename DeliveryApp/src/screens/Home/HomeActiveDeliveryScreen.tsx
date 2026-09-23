@@ -1,14 +1,55 @@
-import React from 'react';
-import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import React, {useEffect, useState} from 'react';
+import {Linking, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
+import {useDriverAuth} from '../../context/DriverAuthContext';
+import {api} from '../../services/api';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'HomeActiveDelivery'>;
 
+interface HomeSummary {
+  todayEarnings: number;
+  todayDeliveries: number;
+}
+
 export function HomeActiveDeliveryScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {driver} = useDriverAuth();
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+  const [summary, setSummary] = useState<HomeSummary | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    api
+      .get<HomeSummary>('/driver/home-summary')
+      .then((res) => {
+        if (!cancelled) setSummary(res.data);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
+
+  const isOutForDelivery = order?.status === 'out_for_delivery';
+  const itemCount = order?.items.reduce((sum, item) => sum + item.quantity, 0) ?? 0;
+  const earnings = order?.driverEarnings?.total ?? order?.pricing.deliveryFee;
+  const distanceKm = (() => {
+    if (!order?.pickup.latitude || !order.pickup.longitude || !order.address.latitude || !order.address.longitude) return null;
+    return haversineKm(order.pickup.latitude, order.pickup.longitude, order.address.latitude, order.address.longitude);
+  })();
+  const etaMin = distanceKm != null ? Math.max(5, Math.round(distanceKm * 4)) : null;
+
+  const contactPhone = isOutForDelivery ? order?.address.contactPhone : order?.pickup.phone;
 
   return (
     <Screen backgroundColor={colors.primary} statusBarStyle="light-content" edges={['top', 'bottom']}>
@@ -19,7 +60,7 @@ export function HomeActiveDeliveryScreen({route, navigation}: Props) {
           </View>
           <View>
             <Text style={styles.headerCaption}>Delivering now</Text>
-            <Text style={styles.headerName}>Rahul Sharma</Text>
+            <Text style={styles.headerName}>{driver?.fullName ?? 'Driver'}</Text>
           </View>
         </View>
         <View style={styles.headerRight}>
@@ -27,7 +68,7 @@ export function HomeActiveDeliveryScreen({route, navigation}: Props) {
             <View style={styles.activeDot} />
             <Text style={styles.activeBadgeText}>ACTIVE</Text>
           </View>
-          <TouchableOpacity style={styles.bellButton}>
+          <TouchableOpacity style={styles.bellButton} onPress={() => navigation.navigate('Notifications')}>
             <Icon name="bell" size={16} color={colors.white} />
           </TouchableOpacity>
         </View>
@@ -40,7 +81,7 @@ export function HomeActiveDeliveryScreen({route, navigation}: Props) {
               <Icon name="bicycle" size={16} color={colors.white} />
               <Text style={styles.deliveryCardHeaderTitle}>Active Delivery</Text>
             </View>
-            <Text style={styles.deliveryCardHeaderOrder}>Order #{orderId}</Text>
+            <Text style={styles.deliveryCardHeaderOrder}>Order #{order?.orderNumber ?? orderId}</Text>
           </View>
 
           <View style={styles.deliveryBody}>
@@ -52,57 +93,82 @@ export function HomeActiveDeliveryScreen({route, navigation}: Props) {
               </View>
               <View style={styles.routeText}>
                 <Text style={styles.routeLabel}>PICKUP</Text>
-                <Text style={styles.routeTitle}>Swiggy Instamart</Text>
-                <Text style={styles.routeSubtitle}>100 Feet Road, Koramangala</Text>
+                <Text style={styles.routeTitle}>{order?.pickup.name ?? 'Store'}</Text>
+                <Text style={styles.routeSubtitle}>{order?.pickup.address ?? '—'}</Text>
                 <View style={styles.routeSpacer} />
                 <Text style={styles.routeLabel}>DELIVER TO</Text>
-                <Text style={styles.routeTitle}>Arjun K. (Customer)</Text>
-                <Text style={styles.routeSubtitle}>5th Cross, HSR Layout, Bengaluru</Text>
+                <Text style={styles.routeTitle}>{order?.address.contactName ?? 'Customer'}</Text>
+                <Text style={styles.routeSubtitle}>{order ? `${order.address.line1}, ${order.address.city}` : '—'}</Text>
               </View>
             </View>
 
             <View style={styles.statusRow}>
               <View>
                 <Text style={styles.statusLabel}>Current status</Text>
-                <Text style={styles.statusValue}>Heading to Pickup</Text>
+                <Text style={styles.statusValue}>{isOutForDelivery ? 'Heading to Customer' : 'Heading to Pickup'}</Text>
               </View>
               <View style={styles.statusRight}>
                 <Text style={styles.statusLabel}>ETA</Text>
-                <Text style={styles.etaValue}>8 min</Text>
+                <Text style={styles.etaValue}>{etaMin != null ? `${etaMin} min` : '—'}</Text>
               </View>
             </View>
 
             <View style={styles.metricsRow}>
-              <Metric value="3.8 km" label="Distance" />
-              <Metric value="₹78" label="Earnings" />
-              <Metric value="4" label="Items" />
+              <Metric value={distanceKm != null ? `${distanceKm.toFixed(1)} km` : '—'} label="Distance" />
+              <Metric value={earnings != null ? `₹${earnings}` : '—'} label="Earnings" />
+              <Metric value={String(itemCount || '—')} label="Items" />
             </View>
           </View>
 
           <View style={styles.deliveryActions}>
-            <DeliveryAction icon="phone" label="Call" bordered />
-            <DeliveryAction icon="message-circle" label="Message" bordered />
-            <DeliveryAction icon="alert-circle" label="Issue" danger />
+            <DeliveryAction
+              icon="phone"
+              label="Call"
+              bordered
+              disabled={!contactPhone}
+              onPress={() => contactPhone && Linking.openURL(`tel:${contactPhone}`).catch(() => {})}
+            />
+            <DeliveryAction
+              icon="message-circle"
+              label="Message"
+              bordered
+              disabled={!contactPhone}
+              onPress={() => contactPhone && Linking.openURL(`sms:${contactPhone}`).catch(() => {})}
+            />
+            <DeliveryAction icon="alert-circle" label="Issue" danger onPress={() => navigation.navigate('SelectIssueReason', {orderId})} />
           </View>
         </View>
 
         <View style={styles.statsRow}>
           <View style={styles.statTile}>
-            <Text style={styles.statValue}>₹1,318</Text>
+            <Text style={styles.statValue}>₹{summary?.todayEarnings ?? 0}</Text>
             <Text style={styles.statLabel}>Today's Earnings</Text>
           </View>
           <View style={styles.statTile}>
-            <Text style={[styles.statValue, styles.statValueDark]}>12</Text>
+            <Text style={[styles.statValue, styles.statValueDark]}>{summary?.todayDeliveries ?? 0}</Text>
             <Text style={styles.statLabel}>Today's Orders</Text>
           </View>
         </View>
       </View>
 
       <View style={styles.footer}>
-        <Button label="Navigate to Pickup" icon="navigation" onPress={() => navigation.navigate('NavigateToStore', {orderId})} />
+        <Button
+          label={isOutForDelivery ? 'Navigate to Customer' : 'Navigate to Pickup'}
+          icon="navigation"
+          onPress={() => navigation.navigate('NavigateToStore', {orderId})}
+        />
       </View>
     </Screen>
   );
+}
+
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 function Metric({value, label}: {value: string; label: string}) {
@@ -119,14 +185,22 @@ function DeliveryAction({
   label,
   danger,
   bordered,
+  disabled,
+  onPress,
 }: {
   icon: React.ComponentProps<typeof Icon>['name'];
   label: string;
   danger?: boolean;
   bordered?: boolean;
+  disabled?: boolean;
+  onPress?: () => void;
 }) {
   return (
-    <TouchableOpacity style={[styles.deliveryAction, bordered && styles.deliveryActionBordered]} activeOpacity={0.8}>
+    <TouchableOpacity
+      style={[styles.deliveryAction, bordered && styles.deliveryActionBordered, disabled && styles.deliveryActionDisabled]}
+      activeOpacity={0.8}
+      disabled={disabled}
+      onPress={onPress}>
       <Icon name={icon} size={15} color={danger ? colors.danger : colors.textSecondary} />
       <Text style={[styles.deliveryActionText, danger && styles.deliveryActionTextDanger]}>{label}</Text>
     </TouchableOpacity>
@@ -173,6 +247,7 @@ const styles = StyleSheet.create({
   deliveryActions: {flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.border},
   deliveryAction: {flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 48},
   deliveryActionBordered: {borderRightWidth: 1, borderRightColor: colors.border},
+  deliveryActionDisabled: {opacity: 0.4},
   deliveryActionText: {...typography.label, color: colors.textSecondary},
   deliveryActionTextDanger: {color: colors.danger, fontWeight: '600'},
   statsRow: {flexDirection: 'row', gap: spacing.sm},

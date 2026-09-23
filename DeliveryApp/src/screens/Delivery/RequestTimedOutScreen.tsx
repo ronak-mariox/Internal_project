@@ -1,14 +1,35 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {StyleSheet, Text, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RequestTimedOut'>;
 
 export function RequestTimedOutScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder, rejectOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    // The countdown expired without a response — treat it like a soft reject so this
+    // driver stops seeing it on the next poll, without blaming a "reassignment" that
+    // the backend doesn't actually track.
+    rejectOrder(orderId, 'timeout').catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder, rejectOrder]);
+
+  const earnings = order?.driverEarnings?.total ?? order?.pricing.deliveryFee;
 
   return (
     <Screen backgroundColor={colors.background} edges={['top', 'bottom']} contentContainerStyle={styles.container}>
@@ -23,27 +44,20 @@ export function RequestTimedOutScreen({route, navigation}: Props) {
       </View>
       <Text style={styles.title}>Request Timed Out</Text>
       <Text style={styles.subtitle}>
-        Order <Text style={styles.subtitleStrong}>#{orderId}</Text> expired before a response was given. It has been assigned to another
-        rider.
+        Order <Text style={styles.subtitleStrong}>#{order?.orderNumber ?? orderId}</Text> expired before you responded. It's been
+        returned to the pool for other delivery partners nearby.
       </Text>
 
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-          <Text style={styles.cardOrderId}>#{orderId}</Text>
+          <Text style={styles.cardOrderId}>#{order?.orderNumber ?? orderId}</Text>
           <View style={styles.expiredTag}>
             <Text style={styles.expiredTagText}>EXPIRED</Text>
           </View>
         </View>
-        <Row label="Pickup" value="Swiggy Instamart, Koramangala" />
-        <Row label="Drop" value="HSR Layout Sector 2" />
-        <Row label="Earnings" value="₹78 (missed)" />
-      </View>
-
-      <View style={styles.impactBanner}>
-        <Text style={styles.impactTitle}>Timeout Impact</Text>
-        <Text style={styles.impactText}>
-          Expired requests count against your acceptance rate just like rejections. Try to respond faster to keep your rate high.
-        </Text>
+        <Row label="Pickup" value={order?.pickup.name ?? '—'} />
+        <Row label="Drop" value={order?.address.city ?? '—'} />
+        <Row label="Earnings" value={earnings != null ? `₹${earnings} (missed)` : '—'} />
       </View>
 
       <View style={styles.actions}>
@@ -73,7 +87,7 @@ const styles = StyleSheet.create({
   title: {...typography.h3, color: colors.textPrimary},
   subtitle: {...typography.body, color: colors.textSecondary, textAlign: 'center', marginTop: spacing.sm, marginBottom: spacing.lg},
   subtitleStrong: {...typography.bodySemibold, color: colors.textPrimary},
-  card: {width: '100%', opacity: 0.7, backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.xxl, padding: spacing.lg, gap: spacing.sm, marginBottom: spacing.lg},
+  card: {width: '100%', opacity: 0.7, backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.xxl, padding: spacing.lg, gap: spacing.sm, marginBottom: spacing.xl},
   cardHeader: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'},
   cardOrderId: {...typography.bodyBold, fontSize: 14, color: colors.dark600},
   expiredTag: {backgroundColor: colors.textMuted, borderRadius: 6, paddingHorizontal: spacing.sm, paddingVertical: 2},
@@ -81,9 +95,6 @@ const styles = StyleSheet.create({
   row: {flexDirection: 'row', justifyContent: 'space-between'},
   rowLabel: {...typography.caption, color: colors.textMuted},
   rowValue: {...typography.caption, color: colors.dark600},
-  impactBanner: {width: '100%', backgroundColor: '#FFFAEB', borderWidth: 1, borderColor: '#FEC84B', borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.xl},
-  impactTitle: {...typography.captionSemibold, color: '#B54708', marginBottom: 2},
-  impactText: {...typography.caption, color: colors.warningText, lineHeight: 16},
   actions: {width: '100%', gap: spacing.md, alignItems: 'center'},
   footnote: {...typography.caption, color: colors.textMuted},
 });

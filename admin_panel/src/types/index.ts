@@ -10,6 +10,17 @@ export type ID = string;
 
 export type CatalogStatus = 'active' | 'inactive';
 
+// Determines what unit/variant input the vendor app shows when adding a product
+// under this subcategory (or category, as a fallback) — weight_volume for
+// grocery-style g/kg/ml, attribute for discrete options like clothing sizes or
+// storage capacities.
+export interface CategoryVariantConfig {
+  kind: 'weight_volume' | 'attribute';
+  label: string;
+  units?: string[];
+  options?: string[];
+}
+
 export interface Subcategory {
   id: ID;
   categoryId: ID;
@@ -17,6 +28,10 @@ export interface Subcategory {
   image: string;
   productCount: number;
   status: CatalogStatus;
+  // Overrides the parent category's variantConfig — e.g. Fashion's "Dresses" needs
+  // clothing sizes while its "Watches" subcategory doesn't. Falls back to the
+  // category's own variantConfig when unset.
+  variantConfig?: CategoryVariantConfig;
 }
 
 export interface Category {
@@ -29,6 +44,7 @@ export interface Category {
   status: CatalogStatus;
   showOnHome: boolean;
   subcategories: Subcategory[];
+  variantConfig?: CategoryVariantConfig;
 }
 
 export type ProductStatus =
@@ -217,32 +233,74 @@ export const ORDER_STATUS_META: Record<
 
 export type SettlementStatus = 'paid' | 'processing' | 'pending' | 'failed';
 
-export interface VendorSettlement {
+// Real, per-order settlement records from `VendorSettlement` on the backend —
+// created once an order is marked delivered. `vendorName` is only populated by
+// the admin-wide `/admin/settlements/vendors` listing (Settlements.tsx); the
+// per-vendor `/admin/vendors/:id/settlements` endpoint (VendorDetail.tsx) omits
+// it since the vendor is already known there.
+export interface VendorSettlementRecord {
   id: ID;
   vendorId: ID;
-  vendorName: string;
-  periodLabel: string;
-  grossSales: number;
+  vendorName?: string;
+  orderId: ID;
+  orderNumber: string;
+  grossAmount: number;
   commissionRate: number;
-  commission: number;
-  adjustments: number;
+  commissionAmount: number;
+  gstOnCommission: number;
   netPayout: number;
-  status: SettlementStatus;
-  dueDate: string;
-  transactionRef?: string;
+  settledAt: string;
 }
 
-export interface DriverPayout {
-  id: ID;
+// Real, aggregated-per-driver payout summary from the backend's EarningsLedger —
+// there's no bank-transfer tracking in the app, so `status` is derived purely
+// from the real pending/settled/paid ledger buckets, never fabricated.
+export interface DriverPayoutSummary {
   driverId: ID;
   driverName: string;
-  periodLabel: string;
   deliveries: number;
-  baseEarnings: number;
-  incentives: number;
-  totalPayout: number;
-  status: SettlementStatus;
-  dueDate: string;
+  pendingAmount: number;
+  settledAmount: number;
+  paidAmount: number;
+  totalEarnings: number;
+  status: 'pending' | 'processing' | 'paid';
+  updatedAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Vendor bank-details change requests — a vendor's live `bankDetails` never
+// updates directly; a change request sits here until an admin approves/rejects it.
+// ---------------------------------------------------------------------------
+
+export type BankDetailsRequestStatus = 'pending' | 'approved' | 'rejected';
+
+export interface BankDetailsFields {
+  accountHolderName?: string;
+  accountNumber?: string;
+  ifsc?: string;
+  bankName?: string;
+  branch?: string;
+  accountType?: string;
+  upiId?: string;
+}
+
+export interface PendingBankDetails {
+  data: BankDetailsFields;
+  status: BankDetailsRequestStatus;
+  submittedAt: string;
+  reviewNote?: string;
+  reviewedAt?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Vendor KYC document uploads beyond the fixed registration steps
+// ---------------------------------------------------------------------------
+
+export interface AdditionalDocumentData {
+  id: ID;
+  name: string;
+  url: string;
+  uploadedAt: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -292,14 +350,18 @@ export interface AdminNotification {
 export type TicketStatus = 'open' | 'in-progress' | 'resolved' | 'escalated';
 export type TicketPriority = 'low' | 'medium' | 'high' | 'urgent';
 
-export interface SupportTicket {
+// Real support tickets from the backend's SupportTicket model — currently only
+// ever created when a driver reports a delivery issue (the only real
+// dispute-raising flow that exists today), so the list may be small but is real.
+export interface SupportTicketRecord {
   id: ID;
   subject: string;
-  raisedBy: string;
+  raisedByName: string;
   raisedByType: 'customer' | 'vendor' | 'driver';
   category: string;
   priority: TicketPriority;
   status: TicketStatus;
+  description?: string;
   orderId?: ID;
   createdAt: string;
   updatedAt: string;

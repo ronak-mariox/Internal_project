@@ -1,14 +1,32 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WrongAddress'>;
 
 export function WrongAddressScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
+
+  const customerName = order?.address.contactName ?? 'the customer';
+  const addressLines = [order?.address.line1, order?.address.line2, order?.address.landmark].filter(Boolean).join(', ');
 
   return (
     <Screen edges={['top', 'bottom']}>
@@ -22,30 +40,26 @@ export function WrongAddressScreen({route, navigation}: Props) {
         <Text style={styles.subtitle}>Delivery location does not match.</Text>
         <View style={styles.tagsRow}>
           <View style={styles.tag}>
-            <Text style={styles.tagText}>#{orderId}</Text>
+            <Text style={styles.tagText}>#{order?.orderNumber ?? orderId}</Text>
           </View>
-          <View style={styles.tag}>
-            <Text style={styles.tagTextMuted}>Priya Mehta</Text>
-          </View>
+          {!!order?.address.contactName && (
+            <View style={styles.tag}>
+              <Text style={styles.tagTextMuted}>{order.address.contactName}</Text>
+            </View>
+          )}
         </View>
       </View>
 
       <ScrollView style={styles.flex} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-        <View style={styles.mismatchCard}>
-          <Text style={styles.mismatchLabel}>ADDRESS MISMATCH</Text>
-          <Text style={styles.mismatchFieldLabel}>Order address</Text>
-          <Text style={styles.mismatchFieldValue}>Apt 4B, Tower C, HSR Layout Sector 2</Text>
-          <View style={styles.mismatchDivider} />
-          <Text style={styles.mismatchFieldLabel}>Your location</Text>
-          <Text style={styles.mismatchFieldValueDanger}>HSR Layout Sector 1 — 1.2 km away</Text>
-          <View style={styles.differentSectorTag}>
-            <Icon name="alert-circle" size={14} color={colors.danger} />
-            <Text style={styles.differentSectorText}>Different sector</Text>
+        {!!addressLines && (
+          <View style={styles.mismatchCard}>
+            <Text style={styles.mismatchLabel}>ORDER ADDRESS</Text>
+            <Text style={styles.mismatchFieldValue}>{addressLines}</Text>
           </View>
-        </View>
+        )}
 
         <View style={styles.hintBanner}>
-          <Text style={styles.hintText}>Ask Priya Mehta for the correct address</Text>
+          <Text style={styles.hintText}>{`Ask ${customerName} for the correct address`}</Text>
         </View>
 
         <View style={styles.actionCard}>
@@ -89,7 +103,9 @@ export function WrongAddressScreen({route, navigation}: Props) {
         <TouchableOpacity onPress={() => navigation.navigate('UpdateAddress', {orderId})}>
           <Text style={styles.footerLink}>Report Address Issue</Text>
         </TouchableOpacity>
-        <Text style={styles.footerSupportLink}>Support</Text>
+        <TouchableOpacity onPress={() => navigation.navigate('IssueSupportContact', {orderId})}>
+          <Text style={styles.footerSupportLink}>Support</Text>
+        </TouchableOpacity>
       </View>
     </Screen>
   );
@@ -109,12 +125,7 @@ const styles = StyleSheet.create({
   body: {padding: spacing.lg, gap: spacing.md},
   mismatchCard: {backgroundColor: colors.dangerSurface, borderWidth: 1, borderColor: colors.dangerBorder, borderRadius: radius.lg, padding: spacing.md},
   mismatchLabel: {...typography.captionSemibold, fontSize: 12, color: colors.danger, letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: spacing.sm},
-  mismatchFieldLabel: {...typography.caption, fontSize: 11, color: colors.textSecondary},
-  mismatchFieldValue: {...typography.labelSemibold, fontSize: 13, color: colors.textPrimary, marginTop: 2},
-  mismatchFieldValueDanger: {...typography.labelSemibold, fontSize: 13, color: colors.danger, marginTop: 2},
-  mismatchDivider: {height: 1, backgroundColor: colors.dangerBorder, marginVertical: spacing.sm},
-  differentSectorTag: {flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.white, borderRadius: 6, paddingHorizontal: spacing.sm, paddingVertical: 6, marginTop: spacing.sm},
-  differentSectorText: {...typography.labelSemibold, fontSize: 13, color: colors.danger},
+  mismatchFieldValue: {...typography.labelSemibold, fontSize: 13, color: colors.textPrimary},
   hintBanner: {backgroundColor: colors.warningSurface, borderWidth: 1, borderColor: colors.warningBorder, borderRadius: radius.sm, padding: spacing.md},
   hintText: {...typography.label, color: colors.warningText},
   actionCard: {backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.md, gap: spacing.sm},

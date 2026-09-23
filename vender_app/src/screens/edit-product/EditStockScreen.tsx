@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
@@ -8,9 +8,12 @@ import { Icon } from '../../icons/Icon';
 import { useProductCatalog } from '../../context/ProductCatalogContext';
 import { useInventory } from '../../context/InventoryContext';
 import { getApiErrorMessage } from '../../services/api';
+import { type FormErrors } from '../../utils/validators';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'EditStock'>;
+
+type Errors = FormErrors<'count'>;
 
 const REASONS = [
   'New Stock Purchase',
@@ -31,6 +34,7 @@ export function EditStockScreen({ navigation, route }: Props) {
   const [reason, setReason] = useState(REASONS[0]);
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<Errors>({});
 
   if (!product) {
     return (
@@ -44,6 +48,14 @@ export function EditStockScreen({ navigation, route }: Props) {
 
   async function handleUpdate() {
     if (saving) return;
+
+    const nextErrors: Errors = {};
+    if (delta === 0) {
+      nextErrors.count = 'Change the stock count to record an update';
+    }
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+
     setSaving(true);
     try {
       const result = await recordStockChange({
@@ -59,7 +71,7 @@ export function EditStockScreen({ navigation, route }: Props) {
         navigation.goBack();
       }
     } catch (err) {
-      Alert.alert('Could not update stock', getApiErrorMessage(err));
+      setErrors({ form: getApiErrorMessage(err, 'Could not update stock. Please try again.') });
     } finally {
       setSaving(false);
     }
@@ -87,18 +99,28 @@ export function EditStockScreen({ navigation, route }: Props) {
               <Text style={styles.label}>New Stock Count</Text>
               <Text style={styles.required}> *</Text>
             </View>
-            <View style={styles.stepperField}>
-              <Pressable style={styles.stepperButton} onPress={() => setNewCount(value => Math.max(0, value - 1))}>
+            <View style={[styles.stepperField, errors.count && styles.stepperFieldError]}>
+              <Pressable
+                style={styles.stepperButton}
+                onPress={() => {
+                  setNewCount(value => Math.max(0, value - 1));
+                  if (errors.count) setErrors({});
+                }}
+              >
                 <Icon name="minus" size={18} color={colors.textPrimary} />
               </Pressable>
               <Text style={styles.stepperValue}>{newCount}</Text>
               <Pressable
                 style={[styles.stepperButton, styles.stepperButtonAdd]}
-                onPress={() => setNewCount(value => value + 1)}
+                onPress={() => {
+                  setNewCount(value => value + 1);
+                  if (errors.count) setErrors({});
+                }}
               >
                 <Icon name="plus" size={18} color={colors.primary} />
               </Pressable>
             </View>
+            {errors.count ? <Text style={styles.errorText}>{errors.count}</Text> : null}
           </View>
 
           {delta !== 0 ? (
@@ -139,6 +161,8 @@ export function EditStockScreen({ navigation, route }: Props) {
           onChangeText={setNotes}
           placeholder="e.g. Invoice #INV-2024-0891"
         />
+
+        {errors.form ? <Text style={styles.errorText}>{errors.form}</Text> : null}
 
         <View style={styles.footer}>
           <Button label="Update Stock" onPress={handleUpdate} loading={saving} disabled={saving} />
@@ -215,6 +239,15 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     backgroundColor: colors.white,
     overflow: 'hidden',
+  },
+  stepperFieldError: {
+    borderColor: colors.error,
+    backgroundColor: colors.errorSurface,
+  },
+  errorText: {
+    ...typography.caption,
+    color: colors.error,
+    paddingTop: spacing.xs,
   },
   stepperButton: {
     width: 56,

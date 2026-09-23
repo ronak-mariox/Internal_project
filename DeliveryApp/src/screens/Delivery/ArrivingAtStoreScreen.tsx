@@ -1,14 +1,31 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
-import {Badge, Button, Icon, Screen} from '../../components';
+import {Button, Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ArrivingAtStore'>;
 
 export function ArrivingAtStoreScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
+
+  const storeName = order?.pickup.name ?? 'Store';
 
   return (
     <Screen edges={['top', 'bottom']} contentContainerStyle={styles.container}>
@@ -20,28 +37,19 @@ export function ArrivingAtStoreScreen({route, navigation}: Props) {
         </View>
       </View>
 
-      <Text style={styles.title}>0.3 km away</Text>
+      <Text style={styles.title}>Heading to Store</Text>
       <Text style={styles.subtitle}>You are almost there</Text>
 
       <View style={styles.card}>
         <View style={styles.cardTopRow}>
-          <Text style={styles.storeName}>Swiggy Instamart</Text>
-          <Badge label="Verified" tone="success" />
+          <Text style={styles.storeName}>{storeName}</Text>
         </View>
-        <View style={styles.addressRow}>
-          <Icon name="map-pin" size={14} color={colors.textSecondary} />
-          <Text style={styles.addressText}>Koramangala 6th Block, 560095</Text>
-        </View>
-        <Text style={styles.etaText}>
-          Estimated arrival: <Text style={styles.etaValue}>2 min</Text>
-        </Text>
-      </View>
-
-      <View style={styles.infoBanner}>
-        <View style={styles.infoIcon}>
-          <Icon name="check" size={12} color={colors.white} />
-        </View>
-        <Text style={styles.infoText}>Store has been notified of your arrival. Order is being prepared.</Text>
+        {!!order?.pickup.address && (
+          <View style={styles.addressRow}>
+            <Icon name="map-pin" size={14} color={colors.textSecondary} />
+            <Text style={styles.addressText}>{order.pickup.address}</Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.spacer} />
@@ -53,6 +61,7 @@ export function ArrivingAtStoreScreen({route, navigation}: Props) {
           icon="phone"
           style={styles.callButton}
           fullWidth={false}
+          disabled={!order?.pickup.phone}
           onPress={() => navigation.navigate('ContactStore', {orderId})}
         />
         <Button
@@ -63,7 +72,11 @@ export function ArrivingAtStoreScreen({route, navigation}: Props) {
           onPress={() => navigation.navigate('ConfirmingArrival', {orderId})}
         />
       </View>
-      <TouchableOpacity style={styles.troubleLink} activeOpacity={0.7}>
+      <TouchableOpacity
+        style={styles.troubleLink}
+        activeOpacity={0.7}
+        onPress={() => navigation.navigate('SelectIssueReason', {orderId})}
+      >
         <Text style={styles.troubleLinkText}>Having trouble finding the store?</Text>
       </TouchableOpacity>
     </Screen>
@@ -93,22 +106,6 @@ const styles = StyleSheet.create({
   storeName: {...typography.title, fontSize: 16, color: colors.textPrimary},
   addressRow: {flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: spacing.sm},
   addressText: {...typography.label, color: colors.textSecondary},
-  etaText: {...typography.bodySemibold, fontSize: 14, color: colors.textPrimary, marginTop: spacing.sm},
-  etaValue: {color: colors.primary},
-  infoBanner: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    width: '100%',
-    backgroundColor: colors.primarySurfaceAlt,
-    borderWidth: 1,
-    borderColor: colors.primaryBorder,
-    borderRadius: radius.lg,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-  },
-  infoIcon: {width: 20, height: 20, borderRadius: 10, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', marginTop: 1},
-  infoText: {...typography.label, color: colors.primaryDark, flex: 1},
   spacer: {flex: 1},
   actionsRow: {flexDirection: 'row', gap: spacing.sm, width: '100%'},
   callButton: {flex: 1, height: 52},

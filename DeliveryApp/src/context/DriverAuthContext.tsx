@@ -38,7 +38,7 @@ interface DriverAuthContextValue {
   isAuthenticated: boolean;
   isLoading: boolean;
   requestOtp: (phone: string) => Promise<OtpRequestResult>;
-  verifyOtp: (phone: string, otp: string) => Promise<OtpVerifyResult>;
+  verifyOtp: (phone: string, otp: string, intent?: 'login' | 'register') => Promise<OtpVerifyResult>;
   logout: () => Promise<void>;
   refreshDriver: () => Promise<Driver | null>;
 }
@@ -103,8 +103,8 @@ export function DriverAuthProvider({children}: PropsWithChildren<{}>) {
     return response.data;
   }, []);
 
-  const verifyOtp = useCallback(async (phone: string, otp: string): Promise<OtpVerifyResult> => {
-    const response = await api.post<OtpVerifyResult>('/driver/auth/otp/verify', {phone, otp});
+  const verifyOtp = useCallback(async (phone: string, otp: string, intent?: 'login' | 'register'): Promise<OtpVerifyResult> => {
+    const response = await api.post<OtpVerifyResult>('/driver/auth/otp/verify', {phone, otp, ...(intent && {intent})});
     const {accessToken, refreshToken, driver: verifiedDriver} = response.data;
     await setTokens(accessToken, refreshToken);
     setDriver(verifiedDriver);

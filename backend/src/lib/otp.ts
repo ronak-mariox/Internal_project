@@ -58,3 +58,23 @@ export async function verifyOtp(phone: string, role: Role, code: string): Promis
   await otp.save();
   return { ok: true };
 }
+
+/**
+ * Delivery-confirmation OTP — same bcrypt-hash/dev-log pattern as `createOtp`, but
+ * stored directly on the order (`Order.deliveryOtpHash`) rather than in `OtpRequest`,
+ * since it's scoped to a single order rather than a phone+role login.
+ */
+export async function createDeliveryOtp(): Promise<{ hash: string; devOtp?: string }> {
+  const code = generateCode();
+  const hash = await bcrypt.hash(code, 10);
+
+  // eslint-disable-next-line no-console
+  console.log(`[delivery-otp] -> ${code}`);
+
+  return env.isProd ? { hash } : { hash, devOtp: code };
+}
+
+export async function compareDeliveryOtp(code: string, hash: string): Promise<boolean> {
+  if (!env.isProd && code === env.devMasterOtp) return true;
+  return bcrypt.compare(code, hash);
+}

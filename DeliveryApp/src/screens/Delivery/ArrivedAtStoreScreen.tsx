@@ -1,14 +1,32 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ArrivedAtStore'>;
 
 export function ArrivedAtStoreScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
+
+  const itemCount = order?.items.reduce((sum, item) => sum + item.quantity, 0) ?? 0;
+  const storeName = order?.pickup.name ?? 'Store';
 
   return (
     <Screen backgroundColor={colors.primary} statusBarStyle="light-content" edges={['top', 'bottom']}>
@@ -18,17 +36,19 @@ export function ArrivedAtStoreScreen({route, navigation}: Props) {
           <Icon name="check" size={32} color={colors.white} />
         </View>
         <Text style={styles.headerTitle}>{"You've Arrived!"}</Text>
-        <Text style={styles.headerSubtitle}>Swiggy Instamart, Koramangala</Text>
+        <Text style={styles.headerSubtitle}>{storeName}</Text>
       </View>
 
       <ScrollView style={styles.flex} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <View style={styles.card}>
           <Text style={styles.cardLabel}>STORE INFO</Text>
-          <Text style={styles.storeName}>Swiggy Instamart</Text>
-          <View style={styles.addressRow}>
-            <Icon name="map-pin" size={14} color={colors.textSecondary} />
-            <Text style={styles.addressText}>Koramangala 6th Block, 560095</Text>
-          </View>
+          <Text style={styles.storeName}>{storeName}</Text>
+          {!!order?.pickup.address && (
+            <View style={styles.addressRow}>
+              <Icon name="map-pin" size={14} color={colors.textSecondary} />
+              <Text style={styles.addressText}>{order.pickup.address}</Text>
+            </View>
+          )}
           <View style={styles.mapPreview}>
             <View style={styles.mapDot} />
           </View>
@@ -37,9 +57,11 @@ export function ArrivedAtStoreScreen({route, navigation}: Props) {
         <View style={styles.orderCard}>
           <View style={styles.orderCardLeft}>
             <Icon name="package" size={16} color={colors.textSecondary} />
-            <Text style={styles.orderCardText}>Order #{orderId}</Text>
+            <Text style={styles.orderCardText}>Order #{order?.orderNumber ?? orderId}</Text>
           </View>
-          <Text style={styles.orderCardText}>3 items · ₹537</Text>
+          <Text style={styles.orderCardText}>
+            {itemCount} item{itemCount === 1 ? '' : 's'} · ₹{order?.pricing.grandTotal ?? '—'}
+          </Text>
         </View>
 
         <View style={styles.actionsCard}>
@@ -59,7 +81,11 @@ export function ArrivedAtStoreScreen({route, navigation}: Props) {
           />
         </View>
 
-        <TouchableOpacity style={styles.reportLink} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={styles.reportLink}
+          activeOpacity={0.7}
+          onPress={() => navigation.navigate('SelectIssueReason', {orderId})}
+        >
           <Text style={styles.reportLinkText}>Report an issue</Text>
         </TouchableOpacity>
       </ScrollView>

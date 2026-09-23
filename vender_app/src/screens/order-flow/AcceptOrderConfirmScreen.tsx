@@ -23,7 +23,10 @@ export function AcceptOrderConfirmScreen({ navigation, route }: Props) {
     setAccepting(true);
     try {
       await acceptOrder(orderId);
-      navigation.replace('InventoryCheck', { orderId });
+      // Reset (not replace) so the resolved "New Order Received" / "Accept Order?" screens are
+      // purged from the stack — otherwise pressing back later in the fulfillment flow would walk
+      // back into them and re-show the accept prompt for an order that's already accepted.
+      navigation.reset({ index: 0, routes: [{ name: 'Dashboard' }, { name: 'InventoryCheck', params: { orderId } }] });
     } catch (err) {
       Alert.alert('Could not accept order', getApiErrorMessage(err));
     } finally {

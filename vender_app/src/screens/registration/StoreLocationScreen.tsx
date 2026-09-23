@@ -13,14 +13,26 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'StoreLocation'>;
 export function StoreLocationScreen({ navigation }: Props) {
   const { data, updateStoreInfo } = useRegistration();
   const [search, setSearch] = useState('');
-  const location = data.storeInfo?.location ?? {
-    address: 'Plot 42, MG Road',
-    cityState: 'Dadar West, Mumbai, Maharashtra 400028',
-    latitude: 19.0176,
-    longitude: 72.8459,
-  };
+  const [location, setLocation] = useState(data.storeInfo?.location ?? null);
+  const [error, setError] = useState('');
+
+  function handleSearchSubmit() {
+    const query = search.trim();
+    if (!query) return;
+    setLocation({
+      address: query,
+      cityState: location?.cityState ?? '',
+      latitude: location?.latitude ?? 19.0176,
+      longitude: location?.longitude ?? 72.8459,
+    });
+    setError('');
+  }
 
   function handleConfirm() {
+    if (!location) {
+      setError('Please search for your store address before confirming');
+      return;
+    }
     if (data.storeInfo) {
       updateStoreInfo({ ...data.storeInfo, location });
     }
@@ -48,6 +60,8 @@ export function StoreLocationScreen({ navigation }: Props) {
             style={styles.searchInput}
             value={search}
             onChangeText={setSearch}
+            onSubmitEditing={handleSearchSubmit}
+            returnKeyType="search"
             placeholder="Search for your store address..."
             placeholderTextColor={colors.textSecondary}
           />
@@ -66,19 +80,31 @@ export function StoreLocationScreen({ navigation }: Props) {
         <View style={styles.sheetHandle} />
         <View style={styles.sheetContent}>
           <Text style={styles.sectionLabel}>Selected Location</Text>
-          <View style={styles.locationRow}>
-            <Icon name="pin" size={16} color={colors.textSecondary} />
-            <View style={styles.locationTextColumn}>
-              <Text style={styles.locationAddress}>{location.address}</Text>
-              <Text style={styles.locationCityState}>{location.cityState}</Text>
-              <Text style={styles.locationAccuracy}>Accuracy: ±5 meters</Text>
+          {location ? (
+            <View style={styles.locationRow}>
+              <Icon name="pin" size={16} color={colors.textSecondary} />
+              <View style={styles.locationTextColumn}>
+                <Text style={styles.locationAddress}>{location.address}</Text>
+                {location.cityState ? (
+                  <Text style={styles.locationCityState}>{location.cityState}</Text>
+                ) : null}
+              </View>
             </View>
-          </View>
+          ) : (
+            <View style={styles.locationRow}>
+              <Icon name="pin" size={16} color={colors.textSecondary} />
+              <Text style={styles.locationPlaceholder}>No address selected yet</Text>
+            </View>
+          )}
 
-          <View style={styles.hintBanner}>
-            <Icon name="alert-triangle" size={14} color={colors.warningDark} />
-            <Text style={styles.hintText}>Drag pin to adjust exact location</Text>
-          </View>
+          {error ? (
+            <Text style={styles.errorText}>{error}</Text>
+          ) : (
+            <View style={styles.hintBanner}>
+              <Icon name="alert-triangle" size={14} color={colors.warningDark} />
+              <Text style={styles.hintText}>Search above to set your exact store address</Text>
+            </View>
+          )}
 
           <Button label="Confirm Location" onPress={handleConfirm} />
         </View>
@@ -240,10 +266,13 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.regular,
     color: colors.textSecondary,
   },
-  locationAccuracy: {
-    ...typography.tiny,
-    color: colors.primary,
-    paddingTop: 2,
+  locationPlaceholder: {
+    ...typography.body,
+    color: colors.textSecondary,
+  },
+  errorText: {
+    ...typography.caption,
+    color: colors.error,
   },
   hintBanner: {
     flexDirection: 'row',

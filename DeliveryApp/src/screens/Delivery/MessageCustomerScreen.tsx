@@ -1,9 +1,10 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'MessageCustomer'>;
 
@@ -15,15 +16,27 @@ interface ChatMessage {
   fromMe: boolean;
 }
 
-const INITIAL_MESSAGES: ChatMessage[] = [
-  {id: '1', text: 'Please leave it at the door, I\'m in a meeting', fromMe: false},
-  {id: '2', text: 'Sure! I\'ll leave it safely', fromMe: true},
-];
-
 export function MessageCustomerScreen({route, navigation}: Props) {
   const {orderId} = route.params;
-  const [messages, setMessages] = useState(INITIAL_MESSAGES);
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
+  const [chatStartedAt] = useState(() => new Date());
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
+
+  const customerName = order?.address.contactName ?? 'Customer';
 
   const send = (text: string) => {
     if (!text.trim()) {return;}
@@ -38,8 +51,8 @@ export function MessageCustomerScreen({route, navigation}: Props) {
           <Icon name="chevron-left" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
         <View style={styles.headerText}>
-          <Text style={styles.headerName}>Priya Mehta</Text>
-          <Text style={styles.headerOrder}>Order #{orderId}</Text>
+          <Text style={styles.headerName}>{customerName}</Text>
+          <Text style={styles.headerOrder}>Order #{order?.orderNumber ?? orderId}</Text>
         </View>
         <TouchableOpacity onPress={() => navigation.navigate('CallCustomer', {orderId})} hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
           <Icon name="phone" size={20} color={colors.textPrimary} />
@@ -47,7 +60,9 @@ export function MessageCustomerScreen({route, navigation}: Props) {
       </View>
 
       <ScrollView style={styles.flex} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-        <Text style={styles.chatStarted}>Chat started · 3:01 PM</Text>
+        <Text style={styles.chatStarted}>
+          Chat started · {chatStartedAt.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}
+        </Text>
         {messages.map(message => (
           <View key={message.id} style={[styles.bubbleRow, message.fromMe && styles.bubbleRowRight]}>
             <View style={[styles.bubble, message.fromMe ? styles.bubbleMe : styles.bubbleThem]}>

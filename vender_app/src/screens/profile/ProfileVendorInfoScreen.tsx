@@ -84,7 +84,7 @@ export function ProfileVendorInfoScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.buttonWrapper}>
-          <Button label="Edit Business Details" onPress={() => navigation.navigate('EditProfile')} />
+          <Button label="Edit Business Details" onPress={() => navigation.navigate('ProfileEditVendorInfo')} />
         </View>
 
         <View style={styles.bannerWrapper}>

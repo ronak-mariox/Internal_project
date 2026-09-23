@@ -1,10 +1,11 @@
-import React from 'react';
-import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import React, {useEffect, useState} from 'react';
+import {StyleSheet, Text, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, Card, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
 import QrCodeIcon from '../../assets/brand/qr-code.svg';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CollectOrder'>;
 
@@ -12,6 +13,20 @@ const STEPS = ['Scan QR or note Order ID', 'Hand over packed order', 'Rider conf
 
 export function CollectOrderScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
 
   return (
     <Screen backgroundColor={colors.primary} statusBarStyle="light-content" edges={['top', 'bottom']}>
@@ -25,7 +40,7 @@ export function CollectOrderScreen({route, navigation}: Props) {
           <View style={styles.qrWrap}>
             <QrCodeIcon width={140} height={140} />
           </View>
-          <Text style={styles.orderId}>#{orderId}</Text>
+          <Text style={styles.orderId}>#{order?.orderNumber ?? orderId}</Text>
           <Text style={styles.orderHint}>Scan to confirm handover</Text>
         </Card>
 
@@ -43,9 +58,6 @@ export function CollectOrderScreen({route, navigation}: Props) {
       </View>
 
       <View style={styles.footer}>
-        <TouchableOpacity>
-          <Text style={styles.cannotScan}>Cannot scan QR?</Text>
-        </TouchableOpacity>
         <Button
           label="I've Collected the Order"
           style={styles.collectButton}
@@ -72,6 +84,5 @@ const styles = StyleSheet.create({
   stepBadgeText: {...typography.captionSemibold, fontSize: 12, color: colors.primary},
   stepText: {...typography.body, color: colors.textPrimary},
   footer: {borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surface, padding: spacing.lg, gap: spacing.md},
-  cannotScan: {...typography.bodyMedium, color: colors.textSecondary, textAlign: 'center', textDecorationLine: 'underline'},
   collectButton: {height: 56},
 });

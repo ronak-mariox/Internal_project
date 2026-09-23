@@ -1,14 +1,44 @@
-import React from 'react';
-import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import React, {useEffect, useState} from 'react';
+import {Linking, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Avatar, Badge, Button, Card, Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'AssignedDelivery'>;
 
 export function AssignedDeliveryScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
+
+  const itemCount = order?.items.reduce((sum, item) => sum + item.quantity, 0) ?? 0;
+  const earnings = order?.driverEarnings?.total ?? order?.pricing.deliveryFee;
+  const deliveryKm = (() => {
+    if (!order?.pickup.latitude || !order.pickup.longitude || !order.address.latitude || !order.address.longitude) return null;
+    return haversineKm(order.pickup.latitude, order.pickup.longitude, order.address.latitude, order.address.longitude);
+  })();
+
+  const storeName = order?.pickup.name ?? 'Store';
+  const storeInitials = storeName
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase())
+    .join('') || 'ST';
 
   return (
     <Screen backgroundColor={colors.primary} statusBarStyle="light-content" edges={['top', 'bottom']}>
@@ -19,61 +49,64 @@ export function AssignedDeliveryScreen({route, navigation}: Props) {
           </View>
         </View>
         <View style={styles.storeRow}>
-          <Avatar initials="RK" backgroundColor="rgba(255,255,255,0.25)" />
+          <Avatar initials={storeInitials} backgroundColor="rgba(255,255,255,0.25)" />
           <View style={styles.storeInfo}>
-            <Text style={styles.storeName}>Ravi Kumar</Text>
-            <Text style={styles.storeMeta}>4.9★ · 234 rides</Text>
+            <Text style={styles.storeName}>{storeName}</Text>
+            <Text style={styles.storeMeta}>{order?.pickup.address ?? 'Pickup point'}</Text>
           </View>
           <View style={styles.onlineDot} />
         </View>
       </View>
 
       <View style={styles.body}>
-        <TouchableOpacity
-          activeOpacity={0.85}
-          onPress={() => navigation.navigate('PickupDetails', {orderId})}>
-        <Card style={styles.orderCard} padded={false}>
-          <View style={styles.orderIdBlock}>
-            <Text style={styles.orderIdLabel}>ORDER ID</Text>
-            <Text style={styles.orderIdValue}>#{orderId}</Text>
-          </View>
+        <TouchableOpacity activeOpacity={0.85} onPress={() => navigation.navigate('PickupDetails', {orderId})}>
+          <Card style={styles.orderCard} padded={false}>
+            <View style={styles.orderIdBlock}>
+              <Text style={styles.orderIdLabel}>ORDER ID</Text>
+              <Text style={styles.orderIdValue}>#{order?.orderNumber ?? orderId}</Text>
+            </View>
 
-          <View style={styles.addressBlock}>
-            <View style={styles.addressRow}>
-              <Icon name="map-pin" size={16} color={colors.textSecondary} />
-              <View style={styles.addressText}>
-                <Text style={styles.addressLabel}>PICKUP</Text>
-                <Text style={styles.addressValue}>Swiggy Instamart, Koramangala</Text>
+            <View style={styles.addressBlock}>
+              <View style={styles.addressRow}>
+                <Icon name="map-pin" size={16} color={colors.textSecondary} />
+                <View style={styles.addressText}>
+                  <Text style={styles.addressLabel}>PICKUP</Text>
+                  <Text style={styles.addressValue}>{order?.pickup.address ?? storeName}</Text>
+                </View>
+              </View>
+              <View style={[styles.addressRow, styles.addressRowSpaced]}>
+                <Icon name="map-pin" size={16} color={colors.textSecondary} />
+                <View style={styles.addressText}>
+                  <Text style={styles.addressLabel}>DELIVERY</Text>
+                  <Text style={styles.addressValue}>{order ? `${order.address.line1}, ${order.address.city}` : 'Delivery address'}</Text>
+                </View>
               </View>
             </View>
-            <View style={[styles.addressRow, styles.addressRowSpaced]}>
-              <Icon name="map-pin" size={16} color={colors.textSecondary} />
-              <View style={styles.addressText}>
-                <Text style={styles.addressLabel}>DELIVERY</Text>
-                <Text style={styles.addressValue}>HSR Layout Sector 2</Text>
-              </View>
+
+            <View style={styles.routeRow}>
+              <Icon name="navigation" size={16} color={colors.textSecondary} />
+              <Text style={styles.routeText}>
+                {deliveryKm != null ? (
+                  <>
+                    Pickup to delivery <Text style={styles.routeStrong}>{deliveryKm.toFixed(1)} km</Text>
+                  </>
+                ) : (
+                  'Distance unavailable'
+                )}
+              </Text>
             </View>
-          </View>
 
-          <View style={styles.routeRow}>
-            <Icon name="navigation" size={16} color={colors.textSecondary} />
-            <Text style={styles.routeText}>
-              Pickup <Text style={styles.routeStrong}>1.2 km</Text> · Delivery <Text style={styles.routeStrong}>3.6 km</Text> · Total{' '}
-              <Text style={styles.routeStrong}>4.8 km</Text>
-            </Text>
-          </View>
+            <View style={styles.metricsRow}>
+              <Metric value={earnings != null ? `₹${earnings}` : '—'} label="Earnings" />
+              <Metric value={deliveryKm != null ? `${Math.max(5, Math.round(deliveryKm * 4))} min` : '—'} label="ETA" />
+              <Metric value={String(itemCount || '—')} label="Items" />
+            </View>
 
-          <View style={styles.metricsRow}>
-            <Metric value="₹82" label="Earnings" />
-            <Metric value="24 min" label="ETA" />
-            <Metric value="3" label="Items" />
-          </View>
-
-          <View style={styles.paymentRow}>
-            <Text style={styles.paymentLabel}>Payment:</Text>
-            <Badge label="Pre-paid" tone="success" />
-          </View>
-        </Card>
+            <View style={styles.paymentRow}>
+              <Text style={styles.paymentLabel}>Payment:</Text>
+              <Badge label={order?.paymentMethod === 'cod' ? `COD · ₹${order.pricing.grandTotal}` : 'Paid Online'} tone="success" />
+            </View>
+          </Card>
         </TouchableOpacity>
       </View>
 
@@ -85,7 +118,10 @@ export function AssignedDeliveryScreen({route, navigation}: Props) {
             icon="phone"
             style={styles.callButton}
             fullWidth={false}
-            onPress={() => navigation.navigate('ContactStore', {orderId})}
+            disabled={!order?.pickup.phone}
+            onPress={() => {
+              if (order?.pickup.phone) Linking.openURL(`tel:${order.pickup.phone}`).catch(() => {});
+            }}
           />
           <Button
             label="Navigate to Store"
@@ -101,6 +137,15 @@ export function AssignedDeliveryScreen({route, navigation}: Props) {
       </View>
     </Screen>
   );
+}
+
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 function Metric({value, label}: {value: string; label: string}) {

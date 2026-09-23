@@ -32,7 +32,12 @@ export function RejectReasonScreen({ navigation, route }: Props) {
     setSubmitting(true);
     try {
       await rejectOrder(orderId, selected);
-      navigation.replace('RejectOrderConfirmation', { orderId, reasonLabel: selected });
+      // Reset (not replace) so "New Order Received" / "Reject Order" screens are purged from the
+      // stack — otherwise back navigation could walk back into them for an already-rejected order.
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Dashboard' }, { name: 'RejectOrderConfirmation', params: { orderId, reasonLabel: selected } }],
+      });
     } catch (err) {
       Alert.alert('Could not reject order', getApiErrorMessage(err));
     } finally {

@@ -35,6 +35,7 @@ export type AuthStackParamList = {
   OperatingHours: undefined;
   WeeklySchedule: undefined;
   HolidayClosure: undefined;
+  HolidayForm: { holidayId?: string } | undefined;
   DeliverySettings: undefined;
   ServiceAvailability: undefined;
   StoreStatus: undefined;
@@ -266,12 +267,16 @@ export type AuthStackParamList = {
 
   Profile: undefined;
   ProfileVendorInfo: undefined;
+  ProfileEditVendorInfo: undefined;
   ProfileOwnerInfo: undefined;
+  ProfileEditOwnerInfo: undefined;
   ProfileStoreInfo: undefined;
-  EditProfile: undefined;
+  ProfileEditStoreInfo: undefined;
   ProfileAddresses: undefined;
+  ProfileAddAddress: undefined;
   ProfileAddressDetails: { addressId: string };
   ProfileDocuments: undefined;
+  ProfileAddDocument: undefined;
   ProfileDocumentStatus: { documentId: string };
   ProfileReplaceDocument: { documentId: string };
   ProfileBankDetails: undefined;

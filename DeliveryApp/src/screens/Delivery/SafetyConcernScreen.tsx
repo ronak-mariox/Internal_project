@@ -1,9 +1,11 @@
 import React, {useState} from 'react';
-import {ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {useOrders} from '../../context/OrdersContext';
+import {getApiErrorMessage} from '../../services/api';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'SafetyConcern'>;
 
@@ -11,7 +13,25 @@ const CONCERNS = ['Unsafe delivery location', 'Threatening customer behavior', '
 
 export function SafetyConcernScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {reportIssue} = useOrders();
   const [selected, setSelected] = useState(CONCERNS[0]);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleReport = async () => {
+    setSubmitting(true);
+    try {
+      await reportIssue(orderId, {type: 'safety_concern', description: selected});
+      Alert.alert(
+        'Reported',
+        'This order has been unassigned from you and will be reassigned. Our safety team will follow up.',
+        [{text: 'OK', onPress: () => navigation.reset({index: 0, routes: [{name: 'Home'}]})}],
+      );
+    } catch (err) {
+      Alert.alert('Could Not Report', getApiErrorMessage(err, 'Please try again.'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <Screen edges={['top', 'bottom']}>
@@ -47,23 +67,16 @@ export function SafetyConcernScreen({route, navigation}: Props) {
           onPress={() => navigation.navigate('EmergencyModeActive')}
         />
         <Button
-          label="Contact Support — Priority"
+          label={submitting ? 'Reporting…' : 'Report — Priority'}
           icon="headphones"
           style={styles.supportButton}
-          onPress={() => navigation.navigate('CannotComplete', {orderId})}
+          disabled={submitting}
+          onPress={handleReport}
         />
-
-        <View style={styles.protectedBanner}>
-          <Text style={styles.protectedTitle}>Your earnings are protected</Text>
-          <Text style={styles.protectedText}>
-            You will receive <Text style={styles.protectedBold}>full earnings</Text>. This incident will be investigated by our safety
-            team.
-          </Text>
-        </View>
 
         <View style={styles.noteBanner}>
           <Text style={styles.noteText}>
-            Order will be <Text style={styles.noteBold}>reassigned automatically</Text>. No action required from you.
+            Reporting this will <Text style={styles.noteBold}>unassign the order from you</Text> and notify our safety team.
           </Text>
         </View>
       </ScrollView>
@@ -88,10 +101,6 @@ const styles = StyleSheet.create({
   concernText: {...typography.bodyLgMedium, color: colors.textPrimary},
   emergencyButton: {backgroundColor: colors.danger},
   supportButton: {backgroundColor: colors.dark900},
-  protectedBanner: {backgroundColor: colors.primarySurface, borderWidth: 1, borderColor: colors.primary, borderRadius: radius.md, padding: spacing.lg},
-  protectedTitle: {...typography.bodySemibold, fontSize: 14, color: '#13845A'},
-  protectedText: {...typography.label, fontSize: 13, color: colors.textPrimary, marginTop: spacing.xs},
-  protectedBold: {fontWeight: '700'},
   noteBanner: {backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md},
   noteText: {...typography.label, fontSize: 13, color: colors.textSecondary, textAlign: 'center'},
   noteBold: {fontWeight: '700', color: colors.textPrimary},

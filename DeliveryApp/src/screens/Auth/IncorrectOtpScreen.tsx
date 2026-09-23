@@ -10,7 +10,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'IncorrectOtp'>;
 const WRONG_DIGITS = ['1', '2', '3', '4'];
 
 export function IncorrectOtpScreen({route, navigation}: Props) {
-  const {mobile, reason} = route.params;
+  const {mobile, reason, flow} = route.params;
 
   return (
     <Screen backgroundColor={colors.background} edges={['top', 'bottom']}>
@@ -50,7 +50,7 @@ export function IncorrectOtpScreen({route, navigation}: Props) {
 
         <View style={styles.actions}>
           <Button label="Try Again" onPress={() => navigation.goBack()} />
-          <Button label="Resend OTP" variant="secondary" onPress={() => navigation.navigate('ResendOtpMethod', {mobile})} />
+          <Button label="Resend OTP" variant="secondary" onPress={() => navigation.navigate('ResendOtpMethod', {mobile, flow})} />
         </View>
       </View>
     </Screen>

@@ -110,6 +110,13 @@ const INITIAL_DRAFT: ProductDraft = {
 
 type ProductDraftContextValue = {
   draft: ProductDraft;
+  /**
+   * Resolved MRP/selling price to *display* to the vendor. For attribute-kind categories
+   * (e.g. Fashion sizes) pricing is captured per-variant in PackSizeVariantScreen and
+   * `draft.pricing` is never set — falls back to the primary (or first) variant's price so
+   * Review/Publish screens don't show a fabricated ₹0 when a real price was set.
+   */
+  effectivePricing: PricingData | undefined;
   updateBasicInfo: (value: BasicInfoData) => void;
   updateImages: (value: ImagesData) => void;
   updateCategory: (value: CategoryData) => void;
@@ -168,6 +175,22 @@ export function ProductDraftProvider({ children }: { children: React.ReactNode }
   const resetDraft = useCallback(() => {
     setDraft(INITIAL_DRAFT);
   }, []);
+
+  const effectivePricing = useMemo<PricingData | undefined>(() => {
+    if (draft.pricing?.mrp || draft.pricing?.sellingPrice) {
+      return draft.pricing;
+    }
+    const variants = draft.packSize?.variants ?? [];
+    const primaryVariant = variants.find(v => v.isPrimary) ?? variants[0];
+    if (!primaryVariant) {
+      return draft.pricing;
+    }
+    return {
+      mrp: primaryVariant.mrp,
+      mrpGstInclusive: draft.pricing?.mrpGstInclusive ?? true,
+      sellingPrice: primaryVariant.sellingPrice,
+    };
+  }, [draft.pricing, draft.packSize]);
 
   const computedDiscountPercent = useCallback(() => {
     const mrp = parseFloat(draft.pricing?.mrp ?? '');
@@ -232,6 +255,7 @@ export function ProductDraftProvider({ children }: { children: React.ReactNode }
   const value = useMemo(
     () => ({
       draft,
+      effectivePricing,
       updateBasicInfo,
       updateImages,
       updateCategory,
@@ -249,6 +273,7 @@ export function ProductDraftProvider({ children }: { children: React.ReactNode }
     }),
     [
       draft,
+      effectivePricing,
       updateBasicInfo,
       updateImages,
       updateCategory,

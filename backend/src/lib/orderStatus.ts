@@ -5,7 +5,9 @@ import type { OrderStatus } from '../models/Order';
  * Enforced server-side so a status can never jump (e.g. delivered -> preparing)
  * regardless of what a client sends.
  */
-export const ORDER_TRANSITIONS: Record<OrderStatus, { to: OrderStatus; by: Array<'vendor' | 'customer' | 'admin'> }[]> = {
+export type OrderActor = 'vendor' | 'customer' | 'admin' | 'driver';
+
+export const ORDER_TRANSITIONS: Record<OrderStatus, { to: OrderStatus; by: OrderActor[] }[]> = {
   placed: [
     { to: 'accepted', by: ['vendor', 'admin'] },
     { to: 'rejected', by: ['vendor', 'admin'] },
@@ -20,16 +22,19 @@ export const ORDER_TRANSITIONS: Record<OrderStatus, { to: OrderStatus; by: Array
     { to: 'cancelled', by: ['vendor', 'admin'] },
   ],
   ready_for_pickup: [
-    { to: 'out_for_delivery', by: ['vendor', 'admin'] },
+    { to: 'out_for_delivery', by: ['vendor', 'driver', 'admin'] },
     { to: 'cancelled', by: ['vendor', 'admin'] },
   ],
-  out_for_delivery: [{ to: 'delivered', by: ['vendor', 'admin'] }],
+  out_for_delivery: [
+    { to: 'delivered', by: ['vendor', 'driver', 'admin'] },
+    { to: 'cancelled', by: ['driver', 'admin'] },
+  ],
   delivered: [],
   cancelled: [],
   rejected: [],
 };
 
-export function canTransition(from: OrderStatus, to: OrderStatus, by: 'vendor' | 'customer' | 'admin'): boolean {
+export function canTransition(from: OrderStatus, to: OrderStatus, by: OrderActor): boolean {
   return ORDER_TRANSITIONS[from].some((t) => t.to === to && t.by.includes(by));
 }
 

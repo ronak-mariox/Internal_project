@@ -1,16 +1,31 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CannotLocateCustomer'>;
 
-const STEPS_TAKEN = ['Called 3 times — no answer', 'Sent 2 messages — no reply', 'Waited 10 minutes at location', 'Checked building entrance'];
-
 export function CannotLocateCustomerScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
+
+  const customerName = order?.address.contactName ?? 'Customer';
 
   return (
     <Screen edges={['top', 'bottom']}>
@@ -21,30 +36,20 @@ export function CannotLocateCustomerScreen({route, navigation}: Props) {
       </View>
       <View style={styles.titleBlock}>
         <Text style={styles.title}>Cannot Locate Customer</Text>
-        <Text style={styles.subtitle}>Priya Mehta is not at the given address.</Text>
+        <Text style={styles.subtitle}>{`${customerName} is not at the given address.`}</Text>
         <View style={styles.tagsRow}>
           <View style={styles.tag}>
-            <Text style={styles.tagText}>#{orderId}</Text>
+            <Text style={styles.tagText}>#{order?.orderNumber ?? orderId}</Text>
           </View>
-          <View style={styles.tag}>
-            <Text style={styles.tagTextMuted}>HSR Layout</Text>
-          </View>
+          {!!order?.address.city && (
+            <View style={styles.tag}>
+              <Text style={styles.tagTextMuted}>{order.address.city}</Text>
+            </View>
+          )}
         </View>
       </View>
 
       <ScrollView style={styles.flex} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-        <View style={styles.stepsCard}>
-          <Text style={styles.stepsLabel}>STEPS TAKEN</Text>
-          {STEPS_TAKEN.map(step => (
-            <View key={step} style={styles.stepRow}>
-              <View style={styles.stepCheck}>
-                <Icon name="check" size={14} color={colors.primary} />
-              </View>
-              <Text style={styles.stepText}>{step}</Text>
-            </View>
-          ))}
-        </View>
-
         <TouchableOpacity
           style={[styles.optionCard, styles.optionCardPrimary]}
           activeOpacity={0.85}
@@ -118,11 +123,6 @@ const styles = StyleSheet.create({
   tagTextMuted: {...typography.caption, color: colors.textSecondary},
   flex: {flex: 1},
   body: {padding: spacing.lg, gap: spacing.md},
-  stepsCard: {backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.md},
-  stepsLabel: {...typography.captionMedium, fontSize: 12, color: colors.textSecondary, letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: spacing.sm},
-  stepRow: {flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xs},
-  stepCheck: {width: 20, height: 20, borderRadius: 10, backgroundColor: colors.primarySurface, alignItems: 'center', justifyContent: 'center'},
-  stepText: {...typography.label, fontSize: 13, color: colors.textLabel},
   optionCard: {flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md},
   optionCardPrimary: {borderColor: colors.primary},
   optionCardDanger: {borderColor: colors.dangerBorder},

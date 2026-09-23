@@ -8,6 +8,7 @@ import {
   Users,
   Tag,
   Wallet,
+  Landmark,
   BarChart3,
   Bell,
   LifeBuoy,
@@ -54,7 +55,10 @@ export const navGroups: NavGroup[] = [
   },
   {
     label: 'Finance',
-    items: [{ label: 'Settlements & Payouts', to: '/settlements', icon: Wallet }],
+    items: [
+      { label: 'Settlements & Payouts', to: '/settlements', icon: Wallet },
+      { label: 'Bank Details Requests', to: '/bank-details-requests', icon: Landmark },
+    ],
   },
   {
     label: 'Insights',

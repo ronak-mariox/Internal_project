@@ -16,6 +16,7 @@ import {
   Loader2,
   AlertTriangle,
   ImageOff,
+  Eye,
 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card, CardHeader } from '@/components/ui/Card';
@@ -29,8 +30,7 @@ import { Modal } from '@/components/ui/Drawer';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Field } from '@/components/ui/Input';
 import { InlineAlert } from '@/components/ui/InlineAlert';
-import { vendorSettlements } from '@/data/settlements';
-import type { KycStatus, Order, ProductStatus, Vendor, VendorStatus } from '@/types';
+import type { KycStatus, Order, ProductStatus, Vendor, VendorSettlementRecord, VendorStatus } from '@/types';
 import { ORDER_STATUS_META } from '@/types';
 import { formatCurrency, formatDate, timeAgo } from '@/lib/format';
 import { api, fetchAllPaginated } from '@/lib/api';
@@ -90,13 +90,25 @@ interface ApiVendor extends Omit<ApiVendorBase, 'businessInfo'> {
   storeInfo?: { storeName?: string; storeAddress?: string; contactNumber?: string; storeType?: string };
   gstDetails?: { registered?: boolean; gstin?: string; businessName?: string; certificateUrl?: string };
   panDetails?: { panNumber?: string; holderName?: string; documentUrl?: string };
-  businessProof?: { documentType?: string; documentNumber?: string; expiryDate?: string; frontUrl?: string };
+  businessProof?: { documentType?: string; documentNumber?: string; expiryDate?: string; frontUrl?: string; backUrl?: string };
   bankDetails?: { accountHolderName?: string; accountNumber?: string; ifsc?: string; bankName?: string; branch?: string };
   stepReviews?: Partial<Record<RegistrationStepKey, ApiStepReview>>;
   createdAt: string;
 }
 
-const STEP_DEFS: { key: RegistrationStepKey; title: string; rows: (v: ApiVendor) => { label: string; value: string }[] | null }[] = [
+interface StepRow {
+  label: string;
+  value: string;
+  /** Backend-relative document URL, when this row represents an uploaded file. */
+  previewUrl?: string;
+}
+
+/** Very small check to decide preview rendering — uploads store no content-type, only a URL. */
+function isPdfUrl(url: string): boolean {
+  return /\.pdf($|\?)/i.test(url);
+}
+
+const STEP_DEFS: { key: RegistrationStepKey; title: string; rows: (v: ApiVendor) => StepRow[] | null }[] = [
   {
     key: 'businessType',
     title: 'Business Type',
@@ -152,7 +164,11 @@ const STEP_DEFS: { key: RegistrationStepKey; title: string; rows: (v: ApiVendor)
         ? [
             { label: 'GSTIN', value: v.gstDetails.gstin ?? '—' },
             { label: 'Business Name', value: v.gstDetails.businessName ?? '—' },
-            { label: 'Certificate', value: v.gstDetails.certificateUrl ? 'Uploaded' : 'Not uploaded' },
+            {
+              label: 'Certificate',
+              value: v.gstDetails.certificateUrl ? 'Uploaded' : 'Not uploaded',
+              previewUrl: v.gstDetails.certificateUrl,
+            },
           ]
         : null,
   },
@@ -164,22 +180,34 @@ const STEP_DEFS: { key: RegistrationStepKey; title: string; rows: (v: ApiVendor)
         ? [
             { label: 'PAN Number', value: v.panDetails.panNumber ?? '—' },
             { label: 'PAN Holder', value: v.panDetails.holderName ?? '—' },
-            { label: 'Document', value: v.panDetails.documentUrl ? 'Uploaded' : 'Not uploaded' },
+            {
+              label: 'Document',
+              value: v.panDetails.documentUrl ? 'Uploaded' : 'Not uploaded',
+              previewUrl: v.panDetails.documentUrl,
+            },
           ]
         : null,
   },
   {
     key: 'businessProof',
     title: 'Business Proof',
-    rows: (v) =>
-      v.businessProof
-        ? [
-            { label: 'Document Type', value: v.businessProof.documentType ?? '—' },
-            { label: 'Number', value: v.businessProof.documentNumber ?? '—' },
-            { label: 'Valid Until', value: v.businessProof.expiryDate ?? '—' },
-            { label: 'Document', value: v.businessProof.frontUrl ? 'Uploaded' : 'Not uploaded' },
-          ]
-        : null,
+    rows: (v) => {
+      if (!v.businessProof) return null;
+      const rows: StepRow[] = [
+        { label: 'Document Type', value: v.businessProof.documentType ?? '—' },
+        { label: 'Number', value: v.businessProof.documentNumber ?? '—' },
+        { label: 'Valid Until', value: v.businessProof.expiryDate ?? '—' },
+        {
+          label: 'Front',
+          value: v.businessProof.frontUrl ? 'Uploaded' : 'Not uploaded',
+          previewUrl: v.businessProof.frontUrl,
+        },
+      ];
+      if (v.businessProof.backUrl) {
+        rows.push({ label: 'Back', value: 'Uploaded', previewUrl: v.businessProof.backUrl });
+      }
+      return rows;
+    },
   },
   {
     key: 'bankDetails',
@@ -288,6 +316,7 @@ export function VendorDetail() {
   const [vendorApi, setVendorApi] = useState<ApiVendor | null>(null);
   const [vendorProducts, setVendorProducts] = useState<VendorProductRow[]>([]);
   const [vendorOrders, setVendorOrders] = useState<Order[]>([]);
+  const [vendorSettlementsData, setVendorSettlementsData] = useState<VendorSettlementRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -303,6 +332,7 @@ export function VendorDetail() {
   const [stepError, setStepError] = useState<string | null>(null);
   const [rejectStepKey, setRejectStepKey] = useState<RegistrationStepKey | null>(null);
   const [rejectNote, setRejectNote] = useState('');
+  const [preview, setPreview] = useState<{ url: string; label: string } | null>(null);
 
   useEffect(() => {
     if (!vendorId) return;
@@ -313,10 +343,11 @@ export function VendorDetail() {
       setNotFound(false);
       try {
         const v = await api.get<ApiVendor>(`/admin/vendors/${vendorId}`);
-        const [productsRaw, ordersRaw, categoriesRaw] = await Promise.all([
+        const [productsRaw, ordersRaw, categoriesRaw, settlementsRaw] = await Promise.all([
           fetchAllPaginated<ApiProduct>('/admin/products', { vendorId }),
           fetchAllPaginated<ApiOrder>('/admin/orders', { vendorId }),
           api.get<ApiCategory[]>('/admin/categories'),
+          api.get<VendorSettlementRecord[]>(`/admin/vendors/${vendorId}/settlements`),
         ]);
 
         const customerIds = Array.from(new Set(ordersRaw.map((o) => o.customerId)));
@@ -340,6 +371,7 @@ export function VendorDetail() {
         setVendorProducts(productsRaw.map((p) => mapVendorProduct(p, categoryNameById)));
         setVendorOrders(ordersRaw.map((o) => mapOrder(o, customerById, vendorById, driverById)));
         setVendorApiStats({ productsCount: productsRaw.length, totalOrders: ordersRaw.length, revenue });
+        setVendorSettlementsData(settlementsRaw);
       } catch (err) {
         if (cancelled) return;
         if (err && typeof err === 'object' && 'status' in err && (err as { status: number }).status === 404) {
@@ -403,8 +435,6 @@ export function VendorDetail() {
     }
   }
 
-  const vendorPayouts = vendorSettlements.filter((s) => s.vendorId === vendorId);
-
   if (loading) {
     return (
       <div>
@@ -454,7 +484,7 @@ export function VendorDetail() {
   const tabItems: TabItem[] = [
     { value: 'products', label: 'Products', count: vendorProducts.length },
     { value: 'orders', label: 'Orders', count: vendorOrders.length },
-    { value: 'settlements', label: 'Settlements', count: vendorPayouts.length },
+    { value: 'settlements', label: 'Settlements', count: vendorSettlementsData.length },
   ];
 
   return (
@@ -562,7 +592,21 @@ export function VendorDetail() {
                   {rows.map((row) => (
                     <div key={row.label} className="flex justify-between gap-3 sm:justify-start">
                       <dt className="text-ink-400">{row.label}</dt>
-                      <dd className="text-ink-700">{row.value}</dd>
+                      <dd className="flex items-center gap-1 text-ink-700">
+                        {row.value}
+                        {row.previewUrl && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPreview({ url: resolveAssetUrl(row.previewUrl!), label: `${def.title} — ${row.label}` })
+                            }
+                            className="rounded-md p-1 text-ink-400 hover:bg-ink-100 hover:text-brand-700"
+                            title="View document"
+                          >
+                            <Eye size={14} />
+                          </button>
+                        )}
+                      </dd>
                     </div>
                   ))}
                 </dl>
@@ -694,31 +738,33 @@ export function VendorDetail() {
         )}
 
         {activeTab === 'settlements' && (
-          vendorPayouts.length === 0 ? (
-            <EmptyState icon={<IndianRupee size={22} />} title="No settlements yet" description="No payout history for this vendor." />
+          vendorSettlementsData.length === 0 ? (
+            <EmptyState icon={<IndianRupee size={22} />} title="No settlements yet" description="Settlements are recorded once an order is marked delivered." />
           ) : (
             <Table>
               <Thead>
                 <Tr>
-                  <Th>Period</Th>
-                  <Th>Gross sales</Th>
+                  <Th>Order</Th>
+                  <Th>Gross amount</Th>
                   <Th>Commission</Th>
+                  <Th>GST on commission</Th>
                   <Th>Net payout</Th>
-                  <Th>Status</Th>
-                  <Th>Due date</Th>
+                  <Th>Settled</Th>
                 </Tr>
               </Thead>
               <tbody>
-                {vendorPayouts.slice(0, ROW_CAP).map((s) => (
+                {vendorSettlementsData.slice(0, ROW_CAP).map((s) => (
                   <Tr key={s.id}>
-                    <Td className="whitespace-nowrap">{s.periodLabel}</Td>
-                    <Td>{formatCurrency(s.grossSales)}</Td>
-                    <Td>{formatCurrency(s.commission)} <span className="text-ink-400">({s.commissionRate}%)</span></Td>
-                    <Td className="font-semibold text-ink-800">{formatCurrency(s.netPayout)}</Td>
                     <Td>
-                      <StatusBadge status={s.status} />
+                      <Link to={`/orders/${s.orderId}`} className="font-semibold text-ink-800 hover:text-brand-700">
+                        {s.orderNumber}
+                      </Link>
                     </Td>
-                    <Td className="text-ink-500">{formatDate(s.dueDate)}</Td>
+                    <Td>{formatCurrency(s.grossAmount)}</Td>
+                    <Td>{formatCurrency(s.commissionAmount)} <span className="text-ink-400">({(s.commissionRate * 100).toFixed(0)}%)</span></Td>
+                    <Td>{formatCurrency(s.gstOnCommission)}</Td>
+                    <Td className="font-semibold text-ink-800">{formatCurrency(s.netPayout)}</Td>
+                    <Td className="text-ink-500">{formatDate(s.settledAt)}</Td>
                   </Tr>
                 ))}
               </tbody>
@@ -776,6 +822,22 @@ export function VendorDetail() {
             className="w-full rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 text-sm text-ink-800 placeholder:text-ink-400 outline-none transition-colors focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
           />
         </Field>
+      </Modal>
+
+      <Modal open={preview !== null} onClose={() => setPreview(null)} title={preview?.label ?? 'Document'} width={640}>
+        {preview && (
+          isPdfUrl(preview.url) ? (
+            <div className="flex flex-col items-center gap-3 py-6 text-center">
+              <FileText size={32} className="text-ink-300" />
+              <p className="text-sm text-ink-600">This document is a PDF and can't be previewed inline.</p>
+              <a href={preview.url} target="_blank" rel="noopener noreferrer">
+                <Button variant="outline">Open PDF in new tab</Button>
+              </a>
+            </div>
+          ) : (
+            <img src={preview.url} alt={preview.label} className="max-h-[70vh] w-full rounded-xl object-contain" />
+          )
+        )}
       </Modal>
     </div>
   );

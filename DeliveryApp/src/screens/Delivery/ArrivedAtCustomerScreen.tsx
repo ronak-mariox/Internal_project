@@ -1,32 +1,56 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ArrivedAtCustomer'>;
 
 export function ArrivedAtCustomerScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
+
+  const customerName = order?.address.contactName ?? 'Customer';
+  const subtitleLine = order ? [customerName, order.address.city].filter(Boolean).join(' · ') : customerName;
 
   return (
     <Screen backgroundColor={colors.primary} statusBarStyle="light-content" edges={['top', 'bottom']}>
       <View style={styles.header}>
         <Icon name="map-pin" size={40} color={colors.white} filled />
         <Text style={styles.headerTitle}>{"You've Arrived!"}</Text>
-        <Text style={styles.headerSubtitle}>Priya Mehta · HSR Layout Sector 2</Text>
+        <Text style={styles.headerSubtitle}>{subtitleLine}</Text>
       </View>
 
       <ScrollView style={styles.flex} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <View style={styles.addressCard}>
           <Text style={styles.cardLabel}>DELIVERY ADDRESS</Text>
-          <Text style={styles.addressLine}>Apt 4B, Tower C, Prestige Lakeside Habitat</Text>
-          <Text style={styles.addressLine}>HSR Layout Sector 2, Bengaluru</Text>
-          <View style={styles.nearRow}>
-            <Icon name="info" size={14} color={colors.textSecondary} />
-            <Text style={styles.nearText}>Near HSR BDA Complex</Text>
-          </View>
+          {!!order?.address.line1 && <Text style={styles.addressLine}>{order.address.line1}</Text>}
+          {!!order && (
+            <Text style={styles.addressLine}>
+              {[order.address.line2, order.address.city].filter(Boolean).join(', ')}
+            </Text>
+          )}
+          {!!order?.address.landmark && (
+            <View style={styles.nearRow}>
+              <Icon name="info" size={14} color={colors.textSecondary} />
+              <Text style={styles.nearText}>Near {order.address.landmark}</Text>
+            </View>
+          )}
         </View>
 
         <TouchableOpacity
@@ -68,10 +92,12 @@ export function ArrivedAtCustomerScreen({route, navigation}: Props) {
           </View>
         </TouchableOpacity>
 
-        <View style={styles.warningBanner}>
-          <Icon name="lock" size={16} color={colors.warning} />
-          <Text style={styles.warningText}>Gate code: #1204 · Leave at door if no answer</Text>
-        </View>
+        {!!order?.specialInstructions && (
+          <View style={styles.warningBanner}>
+            <Icon name="lock" size={16} color={colors.warning} />
+            <Text style={styles.warningText}>{order.specialInstructions}</Text>
+          </View>
+        )}
       </ScrollView>
     </Screen>
   );

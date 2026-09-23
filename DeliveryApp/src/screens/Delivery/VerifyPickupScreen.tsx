@@ -1,9 +1,10 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, Icon, IconBackButton, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'VerifyPickup'>;
 
@@ -15,13 +16,29 @@ interface ChecklistItem {
 
 export function VerifyPickupScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
   const [items, setItems] = useState<ChecklistItem[]>([
     {id: 'order-id', label: `Order ID matches (#${orderId})`, checked: true},
     {id: 'store-name', label: 'Store name confirmed', checked: true},
-    {id: 'item-count', label: 'Item count: 3 items', checked: true},
+    {id: 'item-count', label: 'Item count matches', checked: true},
     {id: 'customer-name', label: 'Customer name on package', checked: false},
     {id: 'sealed', label: 'Package sealed / undamaged', checked: false},
   ]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
+
+  const itemCount = order?.items.reduce((sum, item) => sum + item.quantity, 0) ?? 0;
 
   const toggle = (id: string) => setItems(prev => prev.map(item => (item.id === id ? {...item, checked: !item.checked} : item)));
 
@@ -31,7 +48,7 @@ export function VerifyPickupScreen({route, navigation}: Props) {
         <IconBackButton onPress={() => navigation.goBack()} />
         <View style={styles.headerText}>
           <Text style={styles.headerTitle}>Verify Pickup</Text>
-          <Text style={styles.headerSubtitle}>Order #{orderId}</Text>
+          <Text style={styles.headerSubtitle}>Order #{order?.orderNumber ?? orderId}</Text>
         </View>
       </View>
 
@@ -51,22 +68,11 @@ export function VerifyPickupScreen({route, navigation}: Props) {
               <View style={[styles.checkbox, item.checked && styles.checkboxChecked]}>
                 {item.checked && <Icon name="check" size={16} color={colors.white} />}
               </View>
-              <Text style={[styles.checklistLabel, !item.checked && styles.checklistLabelMuted]}>{item.label}</Text>
+              <Text style={[styles.checklistLabel, !item.checked && styles.checklistLabelMuted]}>
+                {item.id === 'item-count' ? `Item count: ${itemCount} items` : item.label}
+              </Text>
             </TouchableOpacity>
           ))}
-        </View>
-
-        <View style={styles.uploadBox}>
-          <Icon name="camera" size={28} color={colors.textSecondary} />
-          <Text style={styles.uploadText}>Photo of package (optional but recommended)</Text>
-          <View style={styles.uploadActions}>
-            <TouchableOpacity style={styles.uploadButton} activeOpacity={0.85}>
-              <Text style={styles.uploadButtonText}>Upload</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.uploadButton} activeOpacity={0.85}>
-              <Text style={styles.uploadButtonText}>Camera</Text>
-            </TouchableOpacity>
-          </View>
         </View>
       </ScrollView>
 
@@ -115,11 +121,6 @@ const styles = StyleSheet.create({
   checkboxChecked: {backgroundColor: colors.primary, borderColor: colors.primary},
   checklistLabel: {...typography.bodyMedium, color: colors.textPrimary, flex: 1},
   checklistLabelMuted: {...typography.body, color: colors.textSecondary},
-  uploadBox: {alignItems: 'center', gap: spacing.sm, backgroundColor: colors.surface, borderWidth: 2, borderColor: colors.border, borderStyle: 'dashed', borderRadius: radius.lg, padding: spacing.xl},
-  uploadText: {...typography.label, color: colors.textSecondary, textAlign: 'center'},
-  uploadActions: {flexDirection: 'row', gap: spacing.sm},
-  uploadButton: {borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm},
-  uploadButtonText: {...typography.labelSemibold, color: colors.textPrimary},
   footer: {flexDirection: 'row', gap: spacing.sm, padding: spacing.lg, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border},
   skipButton: {flex: 1, alignItems: 'center', justifyContent: 'center'},
   skipText: {...typography.bodyMedium, color: colors.textSecondary},

@@ -5,7 +5,8 @@ import type { AuthStackParamList } from '../../navigation/types';
 import { Button, IconCircle, InfoBanner, NavHeader, ScreenContainer } from '../../components';
 import { Icon } from '../../icons/Icon';
 import { useVendorAuth } from '../../context/VendorAuthContext';
-import { getApiErrorMessage } from '../../services/api';
+import { getApiErrorMessage, getFieldErrors } from '../../services/api';
+import { isValidMobile } from '../../utils/validators';
 import { colors, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'MobileNumber'>;
@@ -17,7 +18,7 @@ export function MobileNumberScreen({ navigation, route }: Props) {
   const [error, setError] = useState<string | undefined>();
   const [submitting, setSubmitting] = useState(false);
 
-  const isValid = /^\d{10}$/.test(phone);
+  const isValid = isValidMobile(phone);
 
   async function handleSendOtp() {
     if (!isValid) {
@@ -30,7 +31,8 @@ export function MobileNumberScreen({ navigation, route }: Props) {
       await requestOtp(phone);
       navigation.navigate('OtpVerification', { mobileNumber: phone, intent });
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Could not send OTP. Please try again.'));
+      const fieldErrors = getFieldErrors(err);
+      setError(fieldErrors.phone ?? getApiErrorMessage(err, 'Could not send OTP. Please try again.'));
     } finally {
       setSubmitting(false);
     }
@@ -166,6 +168,7 @@ const styles = StyleSheet.create({
   },
   phoneInputError: {
     borderColor: colors.error,
+    backgroundColor: colors.errorSurface,
   },
   phoneInputText: {
     ...typography.phoneDigit,

@@ -19,7 +19,7 @@ const AFTER_PUBLISHING = [
 ];
 
 export function PublishProductScreen({ navigation }: Props) {
-  const { draft, publishDraft } = useProductDraft();
+  const { draft, effectivePricing, publishDraft } = useProductDraft();
   const basicInfo = draft.basicInfo;
   const packSize = draft.packSize ? `${draft.packSize.netWeight}${draft.packSize.unit.split(' ')[0]}` : '—';
   const [publishing, setPublishing] = useState(false);
@@ -55,7 +55,7 @@ export function PublishProductScreen({ navigation }: Props) {
           <View style={styles.summaryTextColumn}>
             <Text style={styles.summaryName}>{basicInfo?.name || 'Untitled Product'}</Text>
             <Text style={styles.summaryMeta}>
-              {packSize} · ₹{draft.pricing?.sellingPrice || 0} · {draft.stock?.opening ?? 0} in stock
+              {packSize} · ₹{effectivePricing?.sellingPrice || 0} · {draft.stock?.opening ?? 0} in stock
             </Text>
             <View style={styles.badgeWrapper}>
               <Badge label="Draft" tone="info" />

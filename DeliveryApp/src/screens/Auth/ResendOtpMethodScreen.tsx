@@ -21,7 +21,7 @@ const MAX_ATTEMPTS = 3;
 const USED_ATTEMPTS = 1;
 
 export function ResendOtpMethodScreen({route, navigation}: Props) {
-  const {mobile} = route.params;
+  const {mobile, flow} = route.params;
   const {requestOtp} = useDriverAuth();
   const [method, setMethod] = useState<Method>('sms');
   const [sending, setSending] = useState(false);
@@ -37,7 +37,7 @@ export function ResendOtpMethodScreen({route, navigation}: Props) {
       // picker above is preserved for UX but always resends via the same
       // request-otp endpoint.
       await requestOtp(mobile);
-      navigation.navigate('VerifyRegistrationOtp', {mobile});
+      navigation.navigate('VerifyRegistrationOtp', {mobile, flow});
     } catch (err) {
       Alert.alert('Could not resend OTP', getApiErrorMessage(err));
     } finally {

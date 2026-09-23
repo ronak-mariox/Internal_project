@@ -15,15 +15,18 @@ import {
 } from '../../components';
 import { Icon } from '../../icons/Icon';
 import { useRegistration, type PanDetailsData } from '../../context/RegistrationContext';
-import { api, getApiErrorMessage } from '../../services/api';
+import { api, getApiErrorMessage, getFieldErrors } from '../../services/api';
 import { pickAndUploadDocument } from '../../services/upload';
 import { filenameFromUrl } from '../../utils/format';
+import { isRequired, isValidPAN, type FormErrors } from '../../utils/validators';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'PANVerification'>;
 
 const PAN_TYPES = ['Individual (Personal PAN)', 'Business / Firm PAN', 'HUF PAN'];
 const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+
+type Errors = FormErrors<'panNumber' | 'holderName' | 'dob' | 'documentUrl'>;
 
 export function PANVerificationScreen({ navigation }: Props) {
   const { data, updatePanDetails } = useRegistration();
@@ -39,10 +42,13 @@ export function PANVerificationScreen({ navigation }: Props) {
   );
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | undefined>();
+  const [errors, setErrors] = useState<Errors>({});
 
   function set<K extends keyof PanDetailsData>(key: K, value: PanDetailsData[K]) {
     setForm(prev => ({ ...prev, [key]: value }));
+    if (key === 'panNumber' && errors.panNumber) setErrors(prev => ({ ...prev, panNumber: undefined }));
+    if (key === 'holderName' && errors.holderName) setErrors(prev => ({ ...prev, holderName: undefined }));
+    if (key === 'dob' && errors.dob) setErrors(prev => ({ ...prev, dob: undefined }));
   }
 
   async function handleUploadDocument() {
@@ -60,7 +66,14 @@ export function PANVerificationScreen({ navigation }: Props) {
   }
 
   async function handleContinue() {
-    setError(undefined);
+    const nextErrors: Errors = {};
+    if (!isValidPAN(form.panNumber)) nextErrors.panNumber = 'Enter a valid PAN (e.g. ABCDE1234F)';
+    if (!isRequired(form.holderName)) nextErrors.holderName = 'Enter the PAN holder name';
+    if (!isRequired(form.dob)) nextErrors.dob = 'Enter the date of birth linked to PAN';
+
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+
     setSaving(true);
     try {
       await api.patch('/vendor/registration/pan-details', {
@@ -73,7 +86,12 @@ export function PANVerificationScreen({ navigation }: Props) {
       updatePanDetails(form);
       navigation.navigate('BusinessProof');
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Could not save your PAN details. Please try again.'));
+      const fieldErrors = getFieldErrors(err);
+      if (Object.keys(fieldErrors).length > 0) {
+        setErrors(fieldErrors as Errors);
+      } else {
+        setErrors({ form: getApiErrorMessage(err, 'Could not save your PAN details. Please try again.') });
+      }
     } finally {
       setSaving(false);
     }
@@ -118,6 +136,7 @@ export function PANVerificationScreen({ navigation }: Props) {
                   }}
                   placeholder="ABCDE1234F"
                   autoCapitalize="characters"
+                  error={errors.panNumber}
                 />
               </View>
               {form.verified ? <Badge label="Verified" tone="success" icon="check" /> : null}
@@ -130,6 +149,7 @@ export function PANVerificationScreen({ navigation }: Props) {
             onChangeText={text => set('holderName', text.toUpperCase())}
             autoCapitalize="characters"
             helperText="Name as per Income Tax records"
+            error={errors.holderName}
           />
           <Input
             label="Date of Birth (linked to PAN)"
@@ -137,6 +157,7 @@ export function PANVerificationScreen({ navigation }: Props) {
             value={form.dob}
             onChangeText={text => set('dob', text)}
             placeholder="15 March 1988"
+            error={errors.dob}
           />
           <SelectField
             label="PAN Type"
@@ -162,7 +183,7 @@ export function PANVerificationScreen({ navigation }: Props) {
           )}
         </FormSectionCard>
 
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {errors.form ? <Text style={styles.errorText}>{errors.form}</Text> : null}
 
         <View style={styles.footer}>
           <Button label="Save & Continue" onPress={handleContinue} loading={saving} />

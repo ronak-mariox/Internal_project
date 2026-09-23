@@ -27,3 +27,12 @@ customerOrderRouter.post(
   handleValidation,
   asyncHandler(ctrl.cancelOrder),
 );
+
+customerOrderRouter.post(
+  '/:id/rate',
+  param('id').isString().notEmpty(),
+  body('stars').isInt({ min: 1, max: 5 }),
+  body('reviewText').optional().isString().trim(),
+  handleValidation,
+  asyncHandler(ctrl.rateOrder),
+);

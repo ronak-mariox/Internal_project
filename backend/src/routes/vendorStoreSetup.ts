@@ -75,6 +75,17 @@ vendorStoreSetupRouter.post(
   asyncHandler(ctrl.addHoliday),
 );
 
+vendorStoreSetupRouter.patch(
+  '/holidays/:id',
+  param('id').isString().notEmpty(),
+  body('title').isString().trim().notEmpty().withMessage('Holiday title is required'),
+  body('date').isString().trim().notEmpty().withMessage('Holiday date is required'),
+  body('daysClosed').isInt({ min: 1 }).withMessage('Days closed must be at least 1'),
+  body('note').isString().trim().notEmpty().withMessage('A note is required'),
+  handleValidation,
+  asyncHandler(ctrl.updateHoliday),
+);
+
 vendorStoreSetupRouter.delete(
   '/holidays/:id',
   param('id').isString().notEmpty(),

@@ -7,7 +7,9 @@ import { HttpError } from '../lib/httpError';
 import { toSafeJson } from '../lib/sanitize';
 import { canTransition } from '../lib/orderStatus';
 import { notifyOrderStatusChange } from '../lib/notify';
+import { notifyDriverOrderEvent } from '../lib/driverNotify';
 import { notifyVendor } from '../lib/vendorNotify';
+import { recordVendorSettlement } from '../lib/commission';
 import type { OrderStatus, OrderDoc } from '../models/Order';
 
 /** The vendor app's order UI expects the customer's name/phone inline on each
@@ -21,7 +23,7 @@ async function withCustomerInfo(orders: HydratedDocument<OrderDoc>[]) {
   return orders.map((o) => {
     const customer = byId.get(String(o.customerId));
     return {
-      ...toSafeJson(o),
+      ...toSafeJson(o, ['deliveryOtpHash']),
       customerName: customer?.name ?? 'Customer',
       customerPhone: customer?.phone,
     };
@@ -69,7 +71,11 @@ export async function updateOrderStatus(req: Request, res: Response) {
   await order.save();
 
   await notifyOrderStatusChange(order.customerId, order._id, order.orderNumber, nextStatus, req.body.note);
+  if (nextStatus === 'cancelled' && order.driverId) {
+    await notifyDriverOrderEvent(order.driverId, 'order-cancelled', order._id, order.orderNumber, req.body.note);
+  }
   if (nextStatus === 'delivered') {
+    await recordVendorSettlement(order);
     await notifyVendor(
       order.vendorId,
       'payment',

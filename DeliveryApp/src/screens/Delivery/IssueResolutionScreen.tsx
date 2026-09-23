@@ -1,80 +1,104 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {ScrollView, StyleSheet, Text, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, OrderStatusEvent, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'IssueResolution'>;
 
-const ACTIONS = [
-  {title: 'Issue reported', time: '3:12 PM'},
-  {title: 'Support reviewed', time: '3:13 PM'},
-  {title: 'Customer contacted by support', time: '3:14 PM'},
-  {title: 'Order reassigned', time: '3:16 PM'},
-  {title: 'Your earnings protected', time: '3:16 PM'},
-];
+const STATUS_LABEL: Record<string, string> = {
+  placed: 'Order placed',
+  accepted: 'Order accepted',
+  preparing: 'Preparing',
+  ready_for_pickup: 'Ready for pickup',
+  out_for_delivery: 'Out for delivery',
+  delivered: 'Delivered',
+  cancelled: 'Order cancelled',
+};
+
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+}
 
 export function IssueResolutionScreen({route, navigation}: Props) {
-  const {orderId} = route.params;
+  const {orderId, order: passedOrder} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(passedOrder ?? null);
+
+  useEffect(() => {
+    if (passedOrder) return;
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, passedOrder, getOrder]);
+
+  const isCancelled = order?.status === 'cancelled';
+  const isUnassigned = !isCancelled && !order?.driverId;
+  const timeline: OrderStatusEvent[] = order?.statusHistory ?? [];
 
   return (
     <Screen edges={['top', 'bottom']}>
       <View style={styles.header}>
         <View style={styles.headerIcon}>
-          <Icon name="check" size={32} color={colors.white} />
+          <Icon name={isCancelled ? 'x' : 'check'} size={32} color={colors.white} />
         </View>
-        <Text style={styles.headerTitle}>Issue Resolved</Text>
-        <Text style={styles.headerSubtitle}>Issue #ISS-29847</Text>
+        <Text style={styles.headerTitle}>{isCancelled ? 'Issue Resolved — Cancelled' : 'Issue Resolved'}</Text>
+        <Text style={styles.headerSubtitle}>{`Order #${order?.orderNumber ?? orderId}`}</Text>
       </View>
 
       <ScrollView style={styles.flex} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>RESOLUTION DETAILS</Text>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Resolution type</Text>
-            <Text style={styles.rowValue}>Order reassigned to another rider</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Customer</Text>
-            <Text style={styles.rowValue}>Notified via SMS</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Your earnings</Text>
-            <Text style={styles.rowValueGreen}>₹40 guaranteed (tonight)</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Resolution time</Text>
-            <Text style={styles.rowValue}>4 minutes</Text>
-          </View>
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.actionsTitle}>Actions taken</Text>
-          {ACTIONS.map((action, index) => (
-            <View key={action.title} style={styles.actionRow}>
-              <View style={styles.actionDotCol}>
-                <View style={styles.actionDot}>
-                  <Icon name="check" size={12} color={colors.primary} />
-                </View>
-                {index < ACTIONS.length - 1 && <View style={styles.actionConnector} />}
-              </View>
-              <View style={styles.actionText}>
-                <Text style={styles.actionTitle}>{action.title}</Text>
-                <Text style={styles.actionTime}>{action.time}</Text>
-              </View>
+        {!!order && (
+          <View style={styles.card}>
+            <Text style={styles.cardLabel}>RESOLUTION</Text>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Outcome</Text>
+              <Text style={styles.rowValue}>
+                {isCancelled
+                  ? 'Order was cancelled'
+                  : isUnassigned
+                  ? 'Order returned to the pickup queue'
+                  : STATUS_LABEL[order.status] ?? order.status}
+              </Text>
             </View>
-          ))}
-        </View>
+            {isCancelled && !!order.cancelReason && (
+              <View style={styles.row}>
+                <Text style={styles.rowLabel}>Reason</Text>
+                <Text style={styles.rowValue}>{order.cancelReason}</Text>
+              </View>
+            )}
+          </View>
+        )}
 
-        <View style={styles.protectedBanner}>
-          <Text style={styles.protectedText}>
-            This incident will <Text style={styles.protectedBold}>NOT affect</Text> your acceptance rate or customer rating.
-          </Text>
-        </View>
+        {timeline.length > 0 && (
+          <View style={styles.card}>
+            <Text style={styles.actionsTitle}>Order timeline</Text>
+            {timeline.map((event, index) => (
+              <View key={`${event.status}-${event.at}`} style={styles.actionRow}>
+                <View style={styles.actionDotCol}>
+                  <View style={styles.actionDot}>
+                    <Icon name="check" size={12} color={colors.primary} />
+                  </View>
+                  {index < timeline.length - 1 && <View style={styles.actionConnector} />}
+                </View>
+                <View style={styles.actionText}>
+                  <Text style={styles.actionTitle}>{STATUS_LABEL[event.status] ?? event.status}</Text>
+                  <Text style={styles.actionTime}>{formatTime(event.at)}</Text>
+                  {!!event.note && <Text style={styles.actionNote}>{event.note}</Text>}
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
 
-        <Button label="Back to Home" onPress={() => navigation.navigate('OrderReassigned', {orderId})} />
-        <Button label="View Earnings" variant="secondary" onPress={() => navigation.navigate('EarningsDashboard')} />
+        <Button label="Back to Home" onPress={() => navigation.reset({index: 0, routes: [{name: 'Home'}]})} />
       </ScrollView>
     </Screen>
   );
@@ -92,7 +116,6 @@ const styles = StyleSheet.create({
   row: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingVertical: spacing.xxs, gap: spacing.md},
   rowLabel: {...typography.label, fontSize: 13, color: colors.textSecondary},
   rowValue: {...typography.bodyMedium, fontSize: 13, color: colors.textPrimary, textAlign: 'right', flexShrink: 1},
-  rowValueGreen: {...typography.bodyBold, fontSize: 13, color: colors.primary, textAlign: 'right'},
   actionsTitle: {...typography.bodySemibold, fontSize: 14, color: colors.textPrimary, marginBottom: spacing.md},
   actionRow: {flexDirection: 'row', gap: spacing.md},
   actionDotCol: {alignItems: 'center'},
@@ -101,7 +124,5 @@ const styles = StyleSheet.create({
   actionText: {flex: 1, paddingBottom: spacing.md},
   actionTitle: {...typography.bodyMedium, fontSize: 14, color: colors.textPrimary},
   actionTime: {...typography.caption, fontSize: 12, color: colors.textSecondary, marginTop: 1},
-  protectedBanner: {backgroundColor: colors.primarySurface, borderWidth: 1, borderColor: colors.primary, borderRadius: radius.md, padding: spacing.md},
-  protectedText: {...typography.label, fontSize: 13, color: colors.primaryDark},
-  protectedBold: {fontWeight: '700'},
+  actionNote: {...typography.caption, fontSize: 12, color: colors.textSecondary, marginTop: 2, fontStyle: 'italic'},
 });

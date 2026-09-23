@@ -5,6 +5,7 @@ import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, CountdownRing, Icon} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'NewOrderRequest'>;
 
@@ -12,7 +13,36 @@ const START_SECONDS = 21;
 
 export function NewOrderRequestScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
   const [secondsLeft, setSecondsLeft] = useState(START_SECONDS);
+  const [pickupName, setPickupName] = useState('Store');
+  const [dropArea, setDropArea] = useState('');
+  const [distanceKm, setDistanceKm] = useState<number | null>(null);
+  const [itemCount, setItemCount] = useState(0);
+  const [earnings, setEarnings] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((order) => {
+        if (cancelled) return;
+        setPickupName(order.pickup.name);
+        setDropArea(order.address.city);
+        setItemCount(order.items.reduce((sum, item) => sum + item.quantity, 0));
+        setEarnings(order.driverEarnings?.total ?? order.pricing.deliveryFee);
+        if (order.pickup.latitude != null && order.pickup.longitude != null && order.address.latitude != null && order.address.longitude != null) {
+          const km = haversineKm(order.pickup.latitude, order.pickup.longitude, order.address.latitude, order.address.longitude);
+          setDistanceKm(km);
+        }
+      })
+      .catch(() => {
+        // If this order can no longer be loaded (already taken), let the countdown expire
+        // naturally and route to RequestTimedOut rather than showing broken data.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
 
   useEffect(() => {
     if (secondsLeft <= 0) {
@@ -50,37 +80,46 @@ export function NewOrderRequestScreen({route, navigation}: Props) {
         <View style={styles.headerRow}>
           <View>
             <Text style={styles.headerLabel}>NEW DELIVERY REQUEST</Text>
-            <Text style={styles.headerSubtitle}>Order #{orderId} · 3 items</Text>
+            <Text style={styles.headerSubtitle}>
+              Order #{orderId} · {itemCount || '—'} items
+            </Text>
           </View>
           <CountdownRing seconds={secondsLeft} />
         </View>
 
-        <TouchableOpacity style={styles.routeCard} activeOpacity={0.85} onPress={() => navigation.navigate('OrderRequestDetails', {orderId, secondsLeft})}>
+        <TouchableOpacity
+          style={styles.routeCard}
+          activeOpacity={0.85}
+          onPress={() => navigation.navigate('OrderRequestDetails', {orderId, secondsLeft})}>
           <View style={styles.routeLine}>
             <View style={styles.routeDotPickup} />
             <View style={styles.routeConnector} />
             <View style={styles.routeDotDrop} />
           </View>
           <View style={styles.routeText}>
-            <Text style={styles.routeTitle}>Swiggy Instamart</Text>
-            <Text style={styles.routeSubtitle}>100 Feet Road, Koramangala · 1.2 km away</Text>
+            <Text style={styles.routeTitle} numberOfLines={1}>
+              {pickupName}
+            </Text>
+            <Text style={styles.routeSubtitle}>Pickup location</Text>
             <View style={styles.routeSpacer} />
-            <Text style={styles.routeTitle}>HSR Layout, Sector 2</Text>
-            <Text style={styles.routeSubtitle}>Customer location · 3.8 km total</Text>
+            <Text style={styles.routeTitle} numberOfLines={1}>
+              {dropArea || 'Customer location'}
+            </Text>
+            <Text style={styles.routeSubtitle}>{distanceKm != null ? `${distanceKm.toFixed(1)} km total` : 'Customer location'}</Text>
           </View>
         </TouchableOpacity>
 
         <View style={styles.metricsRow}>
           <View style={[styles.metric, styles.metricHighlighted]}>
-            <Text style={styles.metricValueHighlighted}>₹78</Text>
+            <Text style={styles.metricValueHighlighted}>{earnings != null ? `₹${earnings}` : '—'}</Text>
             <Text style={styles.metricLabel}>Earnings</Text>
           </View>
           <View style={styles.metric}>
-            <Text style={styles.metricValue}>3.8 km</Text>
+            <Text style={styles.metricValue}>{distanceKm != null ? `${distanceKm.toFixed(1)} km` : '—'}</Text>
             <Text style={styles.metricLabel}>Distance</Text>
           </View>
           <View style={styles.metric}>
-            <Text style={styles.metricValue}>22 min</Text>
+            <Text style={styles.metricValue}>{distanceKm != null ? `${Math.max(5, Math.round(distanceKm * 4))} min` : '—'}</Text>
             <Text style={styles.metricLabel}>Est. Time</Text>
           </View>
         </View>
@@ -103,6 +142,15 @@ export function NewOrderRequestScreen({route, navigation}: Props) {
       </View>
     </View>
   );
+}
+
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 const styles = StyleSheet.create({

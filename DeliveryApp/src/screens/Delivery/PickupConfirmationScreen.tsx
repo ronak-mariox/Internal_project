@@ -1,9 +1,11 @@
-import React, {useEffect} from 'react';
-import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import React, {useEffect, useRef} from 'react';
+import {Alert, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Icon, ProgressBar, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {useOrders} from '../../context/OrdersContext';
+import {getApiErrorMessage} from '../../services/api';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PickupConfirmation'>;
 
@@ -16,11 +18,29 @@ const STEPS = [
 
 export function PickupConfirmationScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {confirmPickup} = useOrders();
+  const startedRef = useRef(false);
 
   useEffect(() => {
-    const timer = setTimeout(() => navigation.replace('OrderPickedUp', {orderId}), 1800);
-    return () => clearTimeout(timer);
-  }, [navigation, orderId]);
+    if (startedRef.current) return;
+    startedRef.current = true;
+
+    confirmPickup(orderId)
+      .then(({devOtp}) => {
+        if (__DEV__ && devOtp) {
+          Alert.alert('Pickup Confirmed', `Dev OTP for this delivery: ${devOtp}`, [
+            {text: 'OK', onPress: () => navigation.replace('OrderPickedUp', {orderId})},
+          ]);
+        } else {
+          navigation.replace('OrderPickedUp', {orderId});
+        }
+      })
+      .catch((err) => {
+        Alert.alert('Pickup Confirmation Failed', getApiErrorMessage(err, 'Could not confirm pickup. Please try again.'), [
+          {text: 'OK', onPress: () => navigation.replace('PickupFailed', {orderId})},
+        ]);
+      });
+  }, [orderId, confirmPickup, navigation]);
 
   return (
     <Screen edges={['top', 'bottom']} contentContainerStyle={styles.container}>
@@ -30,7 +50,7 @@ export function PickupConfirmationScreen({route, navigation}: Props) {
         </View>
       </View>
       <Text style={styles.title}>Confirming Pickup…</Text>
-      <Text style={styles.subtitle}>Logging your pickup at 2:41 PM</Text>
+      <Text style={styles.subtitle}>Logging your pickup with the store</Text>
 
       <ProgressBar progress={0.7} height={8} style={styles.progressBar} />
 

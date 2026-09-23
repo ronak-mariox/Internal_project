@@ -8,9 +8,12 @@ import { Icon } from '../../icons/Icon';
 import { useStoreSetup, type DaySchedule } from '../../context/StoreSetupContext';
 import { TIME_OPTIONS } from '../../utils/time';
 import { api, getApiErrorMessage } from '../../services/api';
+import { isTimeRangeValid, type FormErrors } from '../../utils/validators';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'WeeklySchedule'>;
+
+type Errors = FormErrors<'schedule'>;
 
 const DEFAULT_SCHEDULE: DaySchedule[] = [
   { day: 'Mon', open: '9:00 AM', close: '9:00 PM', isOpen: true },
@@ -29,10 +32,15 @@ export function WeeklyScheduleScreen({ navigation }: Props) {
   );
   const [editing, setEditing] = useState<{ index: number; field: 'open' | 'close' } | null>(null);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | undefined>();
+  const [errors, setErrors] = useState<Errors>({});
+  const [invalidDays, setInvalidDays] = useState<Set<string>>(new Set());
 
   function updateDay(index: number, patch: Partial<DaySchedule>) {
     setSchedule(prev => prev.map((day, idx) => (idx === index ? { ...day, ...patch } : day)));
+    if (invalidDays.size > 0) {
+      setInvalidDays(new Set());
+      setErrors({});
+    }
   }
 
   function setAllOpen() {
@@ -54,6 +62,14 @@ export function WeeklyScheduleScreen({ navigation }: Props) {
   }, [schedule]);
 
   async function handleContinue() {
+    const badDays = schedule.filter(day => day.isOpen && !isTimeRangeValid(day.open, day.close));
+    if (badDays.length > 0) {
+      setInvalidDays(new Set(badDays.map(day => day.day)));
+      setErrors({ schedule: `Closing time must be after opening time (${badDays.map(day => day.day).join(', ')})` });
+      return;
+    }
+    setInvalidDays(new Set());
+
     const value = {
       sameEveryDay: false,
       defaultOpen: data.operatingHours?.defaultOpen ?? '9:00 AM',
@@ -62,13 +78,13 @@ export function WeeklyScheduleScreen({ navigation }: Props) {
       weeklySchedule: schedule,
     };
     setSaving(true);
-    setError(undefined);
+    setErrors({});
     try {
       await api.patch('/vendor/store-setup/hours', value);
       updateOperatingHours(value);
       navigation.navigate('HolidayClosure');
     } catch (err) {
-      setError(getApiErrorMessage(err));
+      setErrors({ form: getApiErrorMessage(err) });
     } finally {
       setSaving(false);
     }
@@ -102,7 +118,7 @@ export function WeeklyScheduleScreen({ navigation }: Props) {
               {day.isOpen ? (
                 <View style={styles.dayTimes}>
                   <Pressable
-                    style={styles.timeChip}
+                    style={[styles.timeChip, invalidDays.has(day.day) && styles.timeChipError]}
                     onPress={() => setEditing({ index, field: 'open' })}
                   >
                     <Icon name="clock" size={12} color={colors.textPrimary} />
@@ -110,7 +126,7 @@ export function WeeklyScheduleScreen({ navigation }: Props) {
                   </Pressable>
                   <View style={styles.timeChipDash} />
                   <Pressable
-                    style={styles.timeChip}
+                    style={[styles.timeChip, invalidDays.has(day.day) && styles.timeChipError]}
                     onPress={() => setEditing({ index, field: 'close' })}
                   >
                     <Icon name="clock" size={12} color={colors.textPrimary} />
@@ -144,7 +160,8 @@ export function WeeklyScheduleScreen({ navigation }: Props) {
           <Text style={styles.summaryText}>{summary}</Text>
         </View>
 
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {errors.schedule ? <Text style={styles.errorText}>{errors.schedule}</Text> : null}
+        {errors.form ? <Text style={styles.errorText}>{errors.form}</Text> : null}
 
         <View style={styles.footer}>
           <Button label="Save & Continue" onPress={handleContinue} loading={saving} />
@@ -259,6 +276,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 6,
+  },
+  timeChipError: {
+    borderColor: colors.error,
+    backgroundColor: colors.errorSurface,
   },
   timeChipText: {
     ...typography.caption,

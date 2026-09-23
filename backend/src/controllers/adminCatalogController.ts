@@ -19,7 +19,7 @@ function slugify(name: string): string {
 }
 
 export async function createCategory(req: Request, res: Response) {
-  const { name, imageUrl, sortOrder, isActive, showOnHome } = req.body;
+  const { name, imageUrl, sortOrder, isActive, showOnHome, variantConfig } = req.body;
   const category = await Category.create({
     name,
     slug: slugify(name),
@@ -28,6 +28,7 @@ export async function createCategory(req: Request, res: Response) {
     isActive: isActive ?? true,
     showOnHome: showOnHome ?? true,
     subcategories: [],
+    variantConfig,
   });
   res.status(201).json(toSafeJson(category));
 }
@@ -36,7 +37,7 @@ export async function updateCategory(req: Request, res: Response) {
   const category = await Category.findById(req.params.id);
   if (!category) throw new HttpError(404, 'Category not found');
 
-  const { name, imageUrl, sortOrder, isActive, showOnHome } = req.body;
+  const { name, imageUrl, sortOrder, isActive, showOnHome, variantConfig } = req.body;
   if (name !== undefined) {
     category.name = name;
     category.slug = slugify(name);
@@ -45,6 +46,7 @@ export async function updateCategory(req: Request, res: Response) {
   if (sortOrder !== undefined) category.sortOrder = sortOrder;
   if (isActive !== undefined) category.isActive = isActive;
   if (showOnHome !== undefined) category.showOnHome = showOnHome;
+  if (variantConfig !== undefined) category.variantConfig = variantConfig;
   await category.save();
   res.json(toSafeJson(category));
 }
@@ -62,8 +64,8 @@ export async function addSubcategory(req: Request, res: Response) {
   const category = await Category.findById(req.params.id);
   if (!category) throw new HttpError(404, 'Category not found');
 
-  const { name, imageUrl } = req.body;
-  category.subcategories.push({ id: `sub-${Date.now()}`, name, imageUrl, isActive: true });
+  const { name, imageUrl, variantConfig } = req.body;
+  category.subcategories.push({ id: `sub-${Date.now()}`, name, imageUrl, isActive: true, variantConfig });
   await category.save();
   res.status(201).json(toSafeJson(category));
 }
@@ -75,10 +77,12 @@ export async function updateSubcategory(req: Request, res: Response) {
   const sub = category.subcategories.find((s) => s.id === req.params.subId);
   if (!sub) throw new HttpError(404, 'Subcategory not found');
 
-  const { name, imageUrl, isActive } = req.body;
+  const { name, imageUrl, isActive, variantConfig } = req.body;
   if (name !== undefined) sub.name = name;
   if (imageUrl !== undefined) sub.imageUrl = imageUrl;
   if (isActive !== undefined) sub.isActive = isActive;
+  // null clears a subcategory's override so it falls back to the category's own variantConfig.
+  if (variantConfig !== undefined) sub.variantConfig = variantConfig ?? undefined;
   await category.save();
   res.json(toSafeJson(category));
 }

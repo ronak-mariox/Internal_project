@@ -6,6 +6,8 @@ import { toSafeJson } from '../lib/sanitize';
 import { canTransition } from '../lib/orderStatus';
 import { notifyOrderStatusChange } from '../lib/notify';
 import { notifyVendor } from '../lib/vendorNotify';
+import { notifyDriverOrderEvent } from '../lib/driverNotify';
+import { recordVendorSettlement } from '../lib/commission';
 
 export async function listAllOrders(req: Request, res: Response) {
   const { status, vendorId, customerId, page: pageRaw, limit: limitRaw } = req.query as Record<string, string | undefined>;
@@ -21,13 +23,13 @@ export async function listAllOrders(req: Request, res: Response) {
     Order.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit),
     Order.countDocuments(filter),
   ]);
-  res.json({ items: items.map((o) => toSafeJson(o)), page, limit, total, totalPages: Math.ceil(total / limit) });
+  res.json({ items: items.map((o) => toSafeJson(o, ['deliveryOtpHash'])), page, limit, total, totalPages: Math.ceil(total / limit) });
 }
 
 export async function getOrderForAdmin(req: Request, res: Response) {
   const order = await Order.findById(req.params.id);
   if (!order) throw new HttpError(404, 'Order not found');
-  res.json(toSafeJson(order));
+  res.json(toSafeJson(order, ['deliveryOtpHash']));
 }
 
 export async function updateOrderStatusAsAdmin(req: Request, res: Response) {
@@ -64,7 +66,11 @@ export async function updateOrderStatusAsAdmin(req: Request, res: Response) {
       req.body.note ? `Cancelled by Verdant · ${req.body.note}` : 'Cancelled by Verdant',
       { orderId: order._id },
     );
+    if (order.driverId) {
+      await notifyDriverOrderEvent(order.driverId, 'order-cancelled', order._id, order.orderNumber, req.body.note);
+    }
   } else if (nextStatus === 'delivered') {
+    await recordVendorSettlement(order);
     await notifyVendor(
       order.vendorId,
       'payment',
@@ -74,5 +80,5 @@ export async function updateOrderStatusAsAdmin(req: Request, res: Response) {
     );
   }
 
-  res.json(toSafeJson(order));
+  res.json(toSafeJson(order, ['deliveryOtpHash']));
 }

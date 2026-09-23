@@ -1,8 +1,12 @@
 import React, { useState } from 'react';
-import { FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Dimensions, FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Icon } from '../icons/Icon';
 import { colors, radii, spacing, typography } from '../theme';
+
+const SCREEN_HEIGHT = Dimensions.get('window').height;
+const SHEET_MAX_HEIGHT = SCREEN_HEIGHT * 0.75;
+const LIST_MAX_HEIGHT = SHEET_MAX_HEIGHT - 96;
 
 type Props = {
   label?: string;
@@ -12,6 +16,7 @@ type Props = {
   onChange: (value: string) => void;
   placeholder?: string;
   disabled?: boolean;
+  error?: string;
 };
 
 export function SelectField({
@@ -22,8 +27,10 @@ export function SelectField({
   onChange,
   placeholder = 'Select',
   disabled = false,
+  error,
 }: Props) {
   const [open, setOpen] = useState(false);
+  const hasError = Boolean(error);
 
   return (
     <View style={styles.container}>
@@ -35,7 +42,7 @@ export function SelectField({
       ) : null}
 
       <Pressable
-        style={[styles.field, disabled && styles.fieldDisabled]}
+        style={[styles.field, hasError && styles.fieldError, disabled && styles.fieldDisabled]}
         onPress={() => !disabled && setOpen(true)}
       >
         <Text style={[styles.valueText, !value && styles.placeholderText]} numberOfLines={1}>
@@ -43,6 +50,8 @@ export function SelectField({
         </Text>
         <Icon name="chevron-down" size={16} color={colors.textSecondary} />
       </Pressable>
+
+      {hasError ? <Text style={styles.errorText}>{error}</Text> : null}
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable style={styles.backdrop} onPress={() => setOpen(false)}>
@@ -54,6 +63,9 @@ export function SelectField({
                 data={options}
                 keyExtractor={item => item}
                 style={styles.list}
+                contentContainerStyle={styles.listContent}
+                showsVerticalScrollIndicator
+                initialNumToRender={20}
                 renderItem={({ item }) => (
                   <Pressable
                     style={styles.option}
@@ -107,6 +119,14 @@ const styles = StyleSheet.create({
   fieldDisabled: {
     backgroundColor: colors.surfaceAlt,
   },
+  fieldError: {
+    borderColor: colors.error,
+    backgroundColor: colors.errorSurface,
+  },
+  errorText: {
+    ...typography.caption,
+    color: colors.error,
+  },
   valueText: {
     ...typography.body,
     color: colors.textPrimary,
@@ -129,7 +149,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: radii.xl,
     paddingHorizontal: spacing.xxl,
     paddingTop: spacing.lg,
-    maxHeight: '70%',
+    maxHeight: SHEET_MAX_HEIGHT,
   },
   sheetHandle: {
     width: 40,
@@ -146,7 +166,10 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
   },
   list: {
-    marginBottom: spacing.lg,
+    maxHeight: LIST_MAX_HEIGHT,
+  },
+  listContent: {
+    paddingBottom: spacing.lg,
   },
   option: {
     flexDirection: 'row',

@@ -1,5 +1,8 @@
 import type { Request, Response } from 'express';
+import { Types } from 'mongoose';
 import { Driver } from '../models/Driver';
+import { Order } from '../models/Order';
+import { EarningsLedger } from '../models/EarningsLedger';
 import { createOtp, verifyOtp as verifyOtpCode } from '../lib/otp';
 import { issueTokenPair } from '../lib/tokens';
 import { toSafeJson } from '../lib/sanitize';
@@ -13,6 +16,11 @@ export async function requestOtp(req: Request, res: Response) {
 
 export async function verifyOtp(req: Request, res: Response) {
   const phone = req.body.phone as string;
+  // 'login' means the client is on the sign-in flow and expects an existing account —
+  // don't silently auto-register a stranger's number just because they tapped "Send OTP"
+  // on the login screen. 'register' (the default, for backward compatibility with the
+  // registration flow) keeps the historical auto-create-on-first-verify behaviour.
+  const intent = req.body.intent === 'login' ? 'login' : 'register';
   const result = await verifyOtpCode(phone, 'driver', req.body.otp);
   if (!result.ok) {
     res.status(400).json({ error: 'Incorrect or expired OTP', reason: result.reason });
@@ -20,6 +28,12 @@ export async function verifyOtp(req: Request, res: Response) {
   }
 
   let driver = await Driver.findOne({ phone });
+
+  if (!driver && intent === 'login') {
+    res.status(404).json({ error: 'No rider account found for this number. Please register first.', reason: 'account_not_found' });
+    return;
+  }
+
   const isNewDriver = !driver;
   driver ??= await Driver.create({ phone });
 
@@ -49,6 +63,38 @@ async function loadDriverOrThrow(driverId: string) {
   const driver = await Driver.findById(driverId);
   if (!driver) throw new HttpError(404, 'Driver not found');
   return driver;
+}
+
+export async function updateStatus(req: Request, res: Response) {
+  const { isOnline, lat, lng } = req.body as { isOnline: boolean; lat?: number; lng?: number };
+  const update: Record<string, unknown> = { isOnline };
+  if (lat != null && lng != null) {
+    update.currentLocation = { lat, lng, updatedAt: new Date() };
+  }
+  const driver = await Driver.findByIdAndUpdate(req.user!.id, { $set: update }, { new: true });
+  if (!driver) throw new HttpError(404, 'Driver not found');
+  res.json({ isOnline: driver.isOnline, currentLocation: driver.currentLocation ?? null });
+}
+
+export async function getHomeSummary(req: Request, res: Response) {
+  const driverId = req.user!.id;
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const [todayLedger, todayDeliveries, activeOrder] = await Promise.all([
+    EarningsLedger.aggregate([
+      { $match: { driverId: new Types.ObjectId(driverId), createdAt: { $gte: startOfToday } } },
+      { $group: { _id: null, total: { $sum: '$amount' } } },
+    ]),
+    Order.countDocuments({ driverId, status: 'delivered', deliveredAt: { $gte: startOfToday } }),
+    Order.findOne({ driverId, status: { $in: ['ready_for_pickup', 'out_for_delivery'] } }),
+  ]);
+
+  res.json({
+    todayEarnings: todayLedger[0]?.total ?? 0,
+    todayDeliveries,
+    activeOrderId: activeOrder ? String(activeOrder._id) : null,
+  });
 }
 
 export async function savePersonalInfo(req: Request, res: Response) {

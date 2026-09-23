@@ -1,58 +1,86 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {ScrollView, StyleSheet, Text, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
-import {Icon, IconBackButton} from '../../components';
+import {EmptyState, Icon, IconBackButton, Loader} from '../../components';
 import {colors, radius, shadows, spacing, typography} from '../../theme';
+import {OrderStatus, OrderStatusEvent, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'OrderTimeline'>;
 
-const STEPS = [
-  {time: '2:19 PM', label: 'Order Assigned', sub: 'Ravi Kumar accepted #VR-84821'},
-  {time: '2:22 PM', label: 'Navigate to Store', sub: 'Swiggy Instamart, Koramangala · 1.2 km'},
-  {time: '2:33 PM', label: 'Arrived at Store', sub: 'Check-in confirmed'},
-  {time: '2:34 PM', label: 'Waiting for Order', sub: 'Store preparing order'},
-  {time: '2:41 PM', label: 'Order Ready', sub: '3 items verified and collected'},
-  {time: '2:41 PM', label: 'Navigate to Customer', sub: 'HSR Layout Sector 2 · 3.6 km'},
-  {time: '2:58 PM', label: 'Arrived at Customer', sub: 'Apt 4B, Tower C'},
-  {time: '3:04 PM', label: 'Customer Verified', sub: 'OTP confirmed · Priya Mehta'},
-  {time: '3:04 PM', label: 'Delivered', sub: 'Order handed over successfully'},
-];
+const STATUS_LABEL: Record<OrderStatus, string> = {
+  placed: 'Order placed',
+  accepted: 'Order accepted',
+  preparing: 'Preparing',
+  ready_for_pickup: 'Ready for pickup',
+  out_for_delivery: 'Out for delivery',
+  delivered: 'Delivered',
+  cancelled: 'Order cancelled',
+  rejected: 'Order rejected',
+};
+
+function formatTime(iso?: string): string {
+  if (!iso) {
+    return '';
+  }
+  return new Date(iso).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+}
 
 export function OrderTimelineScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrderTimeline} = useOrders();
+  const [events, setEvents] = useState<OrderStatusEvent[] | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    getOrderTimeline(orderId)
+      .then(list => { if (!cancelled) setEvents(list); })
+      .catch(() => { if (!cancelled) setEvents([]); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [orderId, getOrderTimeline]);
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <IconBackButton onPress={() => navigation.goBack()} />
         <View>
-          <Text style={styles.headerTitle}>Order Timeline · #{orderId}</Text>
+          <Text style={styles.headerTitle}>{`Order Timeline · #${orderId}`}</Text>
           <Text style={styles.headerSubtitle}>Complete order journey</Text>
         </View>
       </View>
 
-      <ScrollView style={styles.flex} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-        <View style={styles.card}>
-          {STEPS.map((step, index) => (
-            <View key={`${step.label}-${index}`} style={styles.stepRow}>
-              <View style={styles.stepTrack}>
-                <View style={styles.stepDot}>
-                  <Icon name="check" size={12} color={colors.white} />
+      {loading && <Loader label="Loading timeline…" fullscreen />}
+
+      {!loading && (!events || events.length === 0) && (
+        <EmptyState icon="clock" title="No timeline yet" description="Status updates for this order will show up here." />
+      )}
+
+      {!loading && events && events.length > 0 && (
+        <ScrollView style={styles.flex} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
+          <View style={styles.card}>
+            {events.map((step, index) => (
+              <View key={`${step.status}-${step.at}-${index}`} style={styles.stepRow}>
+                <View style={styles.stepTrack}>
+                  <View style={styles.stepDot}>
+                    <Icon name="check" size={12} color={colors.white} />
+                  </View>
+                  {index < events.length - 1 && <View style={styles.stepLine} />}
                 </View>
-                {index < STEPS.length - 1 && <View style={styles.stepLine} />}
-              </View>
-              <View style={styles.stepText}>
-                <View style={styles.stepHeaderRow}>
-                  <Text style={styles.stepTime}>{step.time}</Text>
-                  <Text style={styles.stepLabel}>{step.label}</Text>
+                <View style={styles.stepText}>
+                  <View style={styles.stepHeaderRow}>
+                    <Text style={styles.stepTime}>{formatTime(step.at)}</Text>
+                    <Text style={styles.stepLabel}>{STATUS_LABEL[step.status]}</Text>
+                  </View>
+                  {!!step.note && <Text style={styles.stepSub}>{step.note}</Text>}
                 </View>
-                <Text style={styles.stepSub}>{step.sub}</Text>
               </View>
-            </View>
-          ))}
-        </View>
-      </ScrollView>
+            ))}
+          </View>
+        </ScrollView>
+      )}
     </View>
   );
 }

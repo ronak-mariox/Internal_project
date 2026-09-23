@@ -18,7 +18,7 @@ const TIMELINE = [
 ];
 
 export function PublishSuccessScreen({ navigation }: Props) {
-  const { draft, resetDraft } = useProductDraft();
+  const { draft, effectivePricing, resetDraft } = useProductDraft();
   const basicInfo = draft.basicInfo;
   const packSize = draft.packSize ? `${draft.packSize.netWeight}${draft.packSize.unit.split(' ')[0]}` : '—';
 
@@ -64,7 +64,7 @@ export function PublishSuccessScreen({ navigation }: Props) {
                   {basicInfo?.name || 'Untitled Product'}
                 </Text>
                 <Text style={styles.productMeta}>
-                  {packSize} · ₹{draft.pricing?.sellingPrice || 0} · SKU: {draft.identifiers?.sku || '—'}
+                  {packSize} · ₹{effectivePricing?.sellingPrice || 0} · SKU: {draft.identifiers?.sku || '—'}
                 </Text>
                 <View style={styles.pendingRow}>
                   <View style={styles.pendingDot} />

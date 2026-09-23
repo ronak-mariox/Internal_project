@@ -10,26 +10,34 @@ import { colors, fontFamilies, radii, shadows, spacing, typography } from '../..
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'ProfileBankDetails'>;
 
-// Settlement history is illustrative only — ProfileContext has no settlement/transaction
-// data source yet, so these entries mirror the Figma mock content verbatim.
-const SETTLEMENTS = [
-  { id: 'stl-1', amount: '₹12,450', date: '28 Aug 2024' },
-  { id: 'stl-2', amount: '₹9,870', date: '21 Aug 2024' },
-  { id: 'stl-3', amount: '₹15,200', date: '14 Aug 2024' },
-];
+function formatSettlementDate(value: string): string {
+  return new Date(value).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function formatAmount(value: number): string {
+  return `₹${value.toLocaleString('en-IN')}`;
+}
 
 export function ProfileBankDetailsScreen({ navigation }: Props) {
-  const { bankDetails } = useProfile();
+  const { bankDetails, settlements, bankDetailsRequestStatus } = useProfile();
+  const isPendingReview = bankDetailsRequestStatus === 'pending';
 
   return (
     <ScreenContainer scrollable={false} backgroundColor={colors.white}>
       <NavHeader title="Bank Details" onBack={() => navigation.goBack()} />
       <View style={styles.body}>
         <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          <View style={styles.verifiedBanner}>
-            <Icon name="shield-check" size={16} color={colors.primaryDark} />
-            <Text style={styles.verifiedText}>Bank account verified</Text>
-          </View>
+          {isPendingReview ? (
+            <View style={styles.pendingBanner}>
+              <Icon name="clock" size={16} color={colors.warningDark} />
+              <Text style={styles.pendingText}>Change request pending admin review</Text>
+            </View>
+          ) : (
+            <View style={styles.verifiedBanner}>
+              <Icon name="shield-check" size={16} color={colors.primaryDark} />
+              <Text style={styles.verifiedText}>Bank account verified</Text>
+            </View>
+          )}
 
           <LinearGradient
             colors={[colors.primaryDark, '#0E6647']}
@@ -65,28 +73,44 @@ export function ProfileBankDetailsScreen({ navigation }: Props) {
           </LinearGradient>
 
           <Text style={styles.sectionHeader}>Settlement History</Text>
-          <View style={styles.settlementCard}>
-            {SETTLEMENTS.map((entry, index) => (
-              <View
-                key={entry.id}
-                style={[styles.settlementRow, index < SETTLEMENTS.length - 1 && styles.settlementRowDivider]}
-              >
-                <View style={styles.settlementTextColumn}>
-                  <Text style={styles.settlementAmount}>{entry.amount}</Text>
-                  <Text style={styles.settlementDate}>{entry.date}</Text>
+          {settlements.length > 0 ? (
+            <View style={styles.settlementCard}>
+              {settlements.map((entry, index) => (
+                <View
+                  key={entry.id}
+                  style={[styles.settlementRow, index < settlements.length - 1 && styles.settlementRowDivider]}
+                >
+                  <View style={styles.settlementTextColumn}>
+                    <Text style={styles.settlementAmount}>{formatAmount(entry.netPayout)}</Text>
+                    <Text style={styles.settlementDate}>
+                      {entry.orderNumber} · {formatSettlementDate(entry.settledAt)}
+                    </Text>
+                  </View>
+                  <Badge label="Credited" tone="success" />
                 </View>
-                <Badge label="Credited" tone="success" />
-              </View>
-            ))}
-          </View>
+              ))}
+            </View>
+          ) : (
+            <View style={styles.emptySettlements}>
+              <Text style={styles.emptySettlementsText}>No settlements yet.</Text>
+            </View>
+          )}
 
           <View style={styles.buttonWrap}>
-            <Button label="Edit Bank Details" onPress={() => navigation.navigate('ProfileEditBankDetails')} />
+            <Button
+              label={isPendingReview ? 'Change Request Pending' : 'Edit Bank Details'}
+              disabled={isPendingReview}
+              onPress={() => navigation.navigate('ProfileEditBankDetails')}
+            />
           </View>
 
           <View style={styles.infoBanner}>
             <Icon name="info" size={14} color={colors.warningDark} />
-            <Text style={styles.infoBannerText}>Changing bank details requires re-verification.</Text>
+            <Text style={styles.infoBannerText}>
+              {isPendingReview
+                ? 'Your bank details will update once the admin approves your change request.'
+                : 'Changing bank details requires admin approval before it takes effect.'}
+            </Text>
           </View>
         </ScrollView>
       </View>
@@ -119,6 +143,19 @@ const styles = StyleSheet.create({
   verifiedText: {
     ...typography.labelSemibold,
     color: colors.primaryDark,
+  },
+  pendingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.lg,
+    borderRadius: radii.md,
+    backgroundColor: colors.warningSurface,
+  },
+  pendingText: {
+    ...typography.labelSemibold,
+    color: colors.warningDark,
   },
   card: {
     padding: spacing.xxl,
@@ -209,6 +246,19 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   settlementDate: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  emptySettlements: {
+    backgroundColor: colors.white,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: spacing.xxl,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptySettlementsText: {
     ...typography.caption,
     color: colors.textSecondary,
   },

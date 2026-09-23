@@ -22,7 +22,7 @@ export function EnterMobileNumberScreen({navigation}: Props) {
     setLoading(true);
     try {
       await requestOtp(mobile);
-      navigation.navigate('VerifyRegistrationOtp', {mobile});
+      navigation.navigate('VerifyRegistrationOtp', {mobile, flow: 'register'});
     } catch (err) {
       Alert.alert('Could not send OTP', getApiErrorMessage(err));
     } finally {

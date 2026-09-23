@@ -12,13 +12,17 @@ import {
   SelectField,
 } from '../../components';
 import { useRegistration, type BusinessInfoData } from '../../context/RegistrationContext';
-import { api, getApiErrorMessage } from '../../services/api';
+import { api, getApiErrorMessage, getFieldErrors } from '../../services/api';
+import { isRequired, isValidPincode, type FormErrors } from '../../utils/validators';
+import { INDIAN_STATES } from '../../constants/indianStates';
 import { colors, fontFamilies, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'BusinessInfo'>;
 
 const CATEGORIES = ['Grocery & Essentials', 'Electronics', 'Fashion', 'Health & Beauty', 'Home & Kitchen'];
-const STATES = ['Maharashtra', 'Delhi', 'Karnataka', 'Tamil Nadu', 'Gujarat', 'Uttar Pradesh'];
+const STATES = INDIAN_STATES;
+
+type Errors = FormErrors<'legalName' | 'displayName' | 'category' | 'addressLine1' | 'city' | 'state' | 'pincode'>;
 
 export function BusinessInfoScreen({ navigation }: Props) {
   const { data, updateBusinessInfo } = useRegistration();
@@ -34,30 +38,41 @@ export function BusinessInfoScreen({ navigation }: Props) {
       pincode: '',
     },
   );
-  const [error, setError] = useState<string | undefined>();
+  const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
 
   function set<K extends keyof BusinessInfoData>(key: K, value: BusinessInfoData[K]) {
     setForm(prev => ({ ...prev, [key]: value }));
+    if (key in errors) {
+      setErrors(prev => ({ ...prev, [key]: undefined }));
+    }
   }
 
   async function handleContinue() {
-    if (!form.legalName || !form.displayName || !form.category || !form.addressLine1 || !form.city || !form.state) {
-      setError('Please fill in all required fields');
-      return;
-    }
-    if (!/^\d{6}$/.test(form.pincode)) {
-      setError('Invalid pincode. Please check and re-enter.');
-      return;
-    }
-    setError(undefined);
+    const nextErrors: Errors = {};
+    if (!isRequired(form.legalName)) nextErrors.legalName = 'Enter the legal business name';
+    if (!isRequired(form.displayName)) nextErrors.displayName = 'Enter the display store name';
+    if (!isRequired(form.category)) nextErrors.category = 'Select a business category';
+    if (!isRequired(form.addressLine1)) nextErrors.addressLine1 = 'Enter the address';
+    if (!isRequired(form.city)) nextErrors.city = 'Enter the city';
+    if (!isRequired(form.state)) nextErrors.state = 'Select the state';
+    if (!isValidPincode(form.pincode)) nextErrors.pincode = 'Invalid pincode. Please check and re-enter.';
+
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+
     setSaving(true);
     try {
       await api.patch('/vendor/registration/business-info', { ...form, country: 'India' });
       updateBusinessInfo(form);
       navigation.navigate('OwnerInfo');
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Could not save your business information. Please try again.'));
+      const fieldErrors = getFieldErrors(err);
+      if (Object.keys(fieldErrors).length > 0) {
+        setErrors(fieldErrors as Errors);
+      } else {
+        setErrors({ form: getApiErrorMessage(err, 'Could not save your business information. Please try again.') });
+      }
     } finally {
       setSaving(false);
     }
@@ -81,6 +96,7 @@ export function BusinessInfoScreen({ navigation }: Props) {
             onChangeText={text => set('legalName', text)}
             placeholder="Sharma Enterprises"
             helperText="As registered with MCA / government"
+            error={errors.legalName}
           />
           <Input
             label="Display Store Name"
@@ -89,6 +105,7 @@ export function BusinessInfoScreen({ navigation }: Props) {
             onChangeText={text => set('displayName', text)}
             placeholder="Sharma Kirana"
             helperText="Name shown to customers"
+            error={errors.displayName}
           />
           <SelectField
             label="Business Category"
@@ -96,6 +113,7 @@ export function BusinessInfoScreen({ navigation }: Props) {
             value={form.category}
             options={CATEGORIES}
             onChange={value => set('category', value)}
+            error={errors.category}
           />
         </FormSectionCard>
 
@@ -106,6 +124,7 @@ export function BusinessInfoScreen({ navigation }: Props) {
             value={form.addressLine1}
             onChangeText={text => set('addressLine1', text)}
             placeholder="Plot 42, MG Road"
+            error={errors.addressLine1}
           />
           <Input
             label="Address Line 2"
@@ -121,6 +140,7 @@ export function BusinessInfoScreen({ navigation }: Props) {
                 value={form.city}
                 onChangeText={text => set('city', text)}
                 placeholder="Mumbai"
+                error={errors.city}
               />
             </View>
             <View style={styles.rowItem}>
@@ -130,6 +150,7 @@ export function BusinessInfoScreen({ navigation }: Props) {
                 value={form.state}
                 options={STATES}
                 onChange={value => set('state', value)}
+                error={errors.state}
               />
             </View>
           </View>
@@ -140,12 +161,12 @@ export function BusinessInfoScreen({ navigation }: Props) {
             onChangeText={text => set('pincode', text.replace(/[^0-9]/g, '').slice(0, 6))}
             placeholder="400001"
             keyboardType="number-pad"
-            error={error && !/^\d{6}$/.test(form.pincode) ? error : undefined}
+            error={errors.pincode}
           />
           <Input label="Country" value="India" onChangeText={() => undefined} editable={false} />
         </FormSectionCard>
 
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {errors.form ? <Text style={styles.errorText}>{errors.form}</Text> : null}
 
         <View style={styles.footer}>
           <Button label="Save & Continue" onPress={handleContinue} loading={saving} />

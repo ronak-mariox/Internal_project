@@ -5,9 +5,12 @@ import type { AuthStackParamList } from '../../navigation/types';
 import { AddProductHeader, Button, FormSectionCard, ScreenContainer } from '../../components';
 import { Icon } from '../../icons/Icon';
 import { useProductDraft } from '../../context/ProductDraftContext';
+import { isValidBarcode, type FormErrors } from '../../utils/validators';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'ProductBarcode'>;
+
+type Errors = FormErrors<'barcode'>;
 
 function generateEan13() {
   let code = '890';
@@ -21,19 +24,29 @@ export function ProductBarcodeScreen({ navigation }: Props) {
   const { draft, updateIdentifiers } = useProductDraft();
   const [barcode, setBarcode] = useState(draft.identifiers?.barcode ?? '');
   const [scanning, setScanning] = useState(false);
+  const [errors, setErrors] = useState<Errors>({});
 
-  const isValid = barcode.trim().length === 13;
+  const isValid = isValidBarcode(barcode.trim());
 
   function handleScan() {
     setScanning(true);
     setTimeout(() => {
       setBarcode(generateEan13());
       setScanning(false);
+      setErrors({});
     }, 600);
   }
 
   function handleContinue() {
-    updateIdentifiers({ sku: draft.identifiers?.sku ?? '', barcode: barcode.trim() });
+    const trimmed = barcode.trim();
+    const nextErrors: Errors = {};
+    if (trimmed && !isValidBarcode(trimmed)) {
+      nextErrors.barcode = 'Enter a valid 13-digit barcode number';
+    }
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+
+    updateIdentifiers({ sku: draft.identifiers?.sku ?? '', barcode: trimmed });
     navigation.navigate('ProductStockQuantity');
   }
 
@@ -60,11 +73,14 @@ export function ProductBarcodeScreen({ navigation }: Props) {
         <FormSectionCard title="Or Enter Manually">
           <View>
             <Text style={styles.label}>Barcode Number</Text>
-            <View style={styles.field}>
+            <View style={[styles.field, errors.barcode && styles.fieldError]}>
               <Icon name="barcode" size={16} color={colors.textSecondary} />
               <TextInput
                 value={barcode}
-                onChangeText={text => setBarcode(text.replace(/[^0-9]/g, ''))}
+                onChangeText={text => {
+                  setBarcode(text.replace(/[^0-9]/g, ''));
+                  if (errors.barcode) setErrors({});
+                }}
                 placeholder="e.g. 8901058000356"
                 placeholderTextColor={colors.textTertiary}
                 keyboardType="number-pad"
@@ -73,7 +89,11 @@ export function ProductBarcodeScreen({ navigation }: Props) {
               />
               {isValid ? <Icon name="check-circle" size={16} color={colors.primary} /> : null}
             </View>
-            <Text style={styles.helperText}>EAN-13 / UPC / QR barcode number</Text>
+            {errors.barcode ? (
+              <Text style={styles.errorText}>{errors.barcode}</Text>
+            ) : (
+              <Text style={styles.helperText}>EAN-13 / UPC / QR barcode number</Text>
+            )}
           </View>
 
           {isValid ? (
@@ -160,6 +180,15 @@ const styles = StyleSheet.create({
   helperText: {
     ...typography.caption,
     color: colors.textSecondary,
+    marginTop: spacing.sm,
+  },
+  fieldError: {
+    borderColor: colors.error,
+    backgroundColor: colors.errorSurface,
+  },
+  errorText: {
+    ...typography.caption,
+    color: colors.error,
     marginTop: spacing.sm,
   },
   verifiedBanner: {

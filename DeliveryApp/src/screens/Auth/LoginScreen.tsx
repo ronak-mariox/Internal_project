@@ -24,7 +24,7 @@ export function LoginScreen({navigation}: Props) {
     setLoading(true);
     try {
       await requestOtp(cleanMobile);
-      navigation.navigate('VerifyRegistrationOtp', {mobile: cleanMobile});
+      navigation.navigate('VerifyRegistrationOtp', {mobile: cleanMobile, flow: 'login'});
     } catch (err) {
       Alert.alert('Could not send OTP', getApiErrorMessage(err));
     } finally {

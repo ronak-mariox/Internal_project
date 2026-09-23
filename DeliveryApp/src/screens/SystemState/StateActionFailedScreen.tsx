@@ -35,12 +35,8 @@ export function StateActionFailedScreen({navigation}: Props) {
 
       <ScrollView style={styles.flex} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <View style={styles.reasonCard}>
-          <Text style={styles.reasonIntro}>Could not complete action for</Text>
-          <Text style={styles.reasonOrder}>Order #VR-84821</Text>
-          <Text style={styles.reasonError}>Could not confirm pickup — server timeout.</Text>
-          <View style={styles.codeBadge}>
-            <Text style={styles.codeText}>ERR_PICKUP_TIMEOUT</Text>
-          </View>
+          <Text style={styles.reasonIntro}>We couldn't complete that action</Text>
+          <Text style={styles.reasonError}>A network or server error interrupted the request. Try again, or get help below.</Text>
         </View>
 
         <Text style={styles.sectionTitle}>Recovery Options</Text>
@@ -60,7 +56,7 @@ export function StateActionFailedScreen({navigation}: Props) {
 
         <View style={styles.safeBanner}>
           <Icon name="shield" size={16} color={colors.primaryDark} />
-          <Text style={styles.safeText}>Your earnings are protected regardless of technical issues.</Text>
+          <Text style={styles.safeText}>Any steps you already completed on this order stay on record even if this action fails.</Text>
         </View>
       </ScrollView>
     </View>
@@ -97,11 +93,8 @@ const styles = StyleSheet.create({
   heroTitle: {...typography.title, color: colors.white},
   body: {padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxxl},
   reasonCard: {backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.dangerBorder, borderRadius: radius.xl, padding: spacing.lg, ...shadows.sm},
-  reasonIntro: {...typography.label, fontSize: 13, color: colors.textSecondary},
-  reasonOrder: {...typography.bodyBold, fontSize: 15, color: colors.textPrimary, marginTop: spacing.xs},
-  reasonError: {...typography.label, fontSize: 13, color: RED, marginTop: spacing.sm},
-  codeBadge: {backgroundColor: '#F3F4F6', borderRadius: radius.sm, alignSelf: 'flex-start', paddingHorizontal: spacing.sm, paddingVertical: spacing.xxs, marginTop: spacing.md},
-  codeText: {fontFamily: 'Courier', fontSize: 11, color: colors.textSecondary},
+  reasonIntro: {...typography.bodySemibold, fontSize: 14, color: colors.textPrimary},
+  reasonError: {...typography.label, fontSize: 13, color: colors.textSecondary, marginTop: spacing.sm},
   sectionTitle: {...typography.bodySemibold, fontSize: 13, color: colors.textPrimary},
   optionsList: {gap: spacing.sm},
   optionRow: {flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.xl, paddingHorizontal: spacing.lg, paddingVertical: spacing.md},

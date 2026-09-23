@@ -14,15 +14,12 @@ import { Icon } from '../../icons/Icon';
 import { useRegistration } from '../../context/RegistrationContext';
 import { useVendorAuth } from '../../context/VendorAuthContext';
 import { getApiErrorMessage, getFieldErrors } from '../../services/api';
+import { isRequired, isValidEmail, minLength, passwordsMatch, type FormErrors as SharedFormErrors } from '../../utils/validators';
 import { colors, fontFamilies, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'CreateAccount'>;
 
-type FormErrors = Partial<
-  Record<'fullName' | 'email' | 'password' | 'confirmPassword' | 'terms' | 'form', string>
->;
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+type FormErrors = SharedFormErrors<'fullName' | 'email' | 'password' | 'confirmPassword' | 'terms'>;
 
 export function CreateAccountScreen({ navigation, route }: Props) {
   const { mobileNumber, verifiedPhoneToken } = route.params;
@@ -38,14 +35,14 @@ export function CreateAccountScreen({ navigation, route }: Props) {
 
   async function handleSubmit() {
     const nextErrors: FormErrors = {};
-    if (!fullName.trim()) nextErrors.fullName = 'Enter your full name';
-    if (!email.trim()) {
+    if (!isRequired(fullName)) nextErrors.fullName = 'Enter your full name';
+    if (!isRequired(email)) {
       nextErrors.email = 'Enter your email address';
-    } else if (!EMAIL_PATTERN.test(email.trim())) {
+    } else if (!isValidEmail(email)) {
       nextErrors.email = 'Enter a valid email address';
     }
-    if (password.length < 8) nextErrors.password = 'Password must be at least 8 characters';
-    if (confirmPassword !== password) nextErrors.confirmPassword = 'Passwords do not match';
+    if (!minLength(password, 8)) nextErrors.password = 'Password must be at least 8 characters';
+    if (!passwordsMatch(password, confirmPassword)) nextErrors.confirmPassword = 'Passwords do not match';
     if (!agreed) nextErrors.terms = 'Please accept the Terms of Service and Privacy Policy';
 
     setErrors(nextErrors);

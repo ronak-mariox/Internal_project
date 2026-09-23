@@ -1,9 +1,10 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, Icon, IconBackButton, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PackageIssue'>;
 
@@ -11,8 +12,18 @@ const ISSUE_TYPES = ['Seal broken', 'Package wet / leaking', 'Package crushed', 
 
 export function PackageIssueScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
   const [selected, setSelected] = useState(ISSUE_TYPES[0]);
-  const [description, setDescription] = useState('Package seal is broken at the top. Contents seem fine but packaging is open.');
+  const [description, setDescription] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then(o => { if (!cancelled) setOrder(o); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [orderId, getOrder]);
 
   const handleSubmit = () => {
     if (selected === 'Wrong package given') {
@@ -24,13 +35,17 @@ export function PackageIssueScreen({route, navigation}: Props) {
     }
   };
 
+  const subtitle = order
+    ? [`Order #${order.orderNumber}`, order.address.contactName, order.address.city].filter(Boolean).join(' · ')
+    : `Order #${orderId}`;
+
   return (
     <Screen edges={['top', 'bottom']} keyboardAvoiding>
       <View style={styles.header}>
         <IconBackButton onPress={() => navigation.goBack()} />
         <View style={styles.headerText}>
           <Text style={styles.headerTitle}>Package Issue</Text>
-          <Text style={styles.headerSubtitle}>Order #{orderId} · Priya Mehta · HSR Layout</Text>
+          <Text style={styles.headerSubtitle}>{subtitle}</Text>
         </View>
       </View>
 
@@ -54,20 +69,20 @@ export function PackageIssueScreen({route, navigation}: Props) {
         </View>
 
         <Text style={styles.sectionLabel}>Description</Text>
-        <TextInput style={styles.textArea} value={description} onChangeText={setDescription} multiline maxLength={300} textAlignVertical="top" />
+        <TextInput
+          style={styles.textArea}
+          value={description}
+          onChangeText={setDescription}
+          placeholder="Describe what's wrong with the package…"
+          placeholderTextColor={colors.textMuted}
+          multiline
+          maxLength={300}
+          textAlignVertical="top"
+        />
         <Text style={styles.charCount}>{description.length} / 300</Text>
 
         <Text style={styles.sectionLabel}>Photo Evidence</Text>
         <View style={styles.photoRow}>
-          <View style={styles.photoThumb}>
-            <Icon name="camera" size={22} color={colors.textSecondary} />
-            <View style={styles.photoTag}>
-              <Text style={styles.photoTagText}>Photo 1</Text>
-            </View>
-          </View>
-          <View style={styles.photoThumb}>
-            <Icon name="camera" size={22} color={colors.textSecondary} />
-          </View>
           <TouchableOpacity style={styles.addPhotoTile} activeOpacity={0.85}>
             <Icon name="plus" size={20} color={colors.textMuted} />
             <Text style={styles.addPhotoText}>Add</Text>
@@ -75,16 +90,13 @@ export function PackageIssueScreen({route, navigation}: Props) {
         </View>
 
         <View style={styles.noteBanner}>
-          <Text style={styles.noteText}>
-            Support will review your report and advise on completing or returning this delivery. Your earnings are protected during this
-            process.
-          </Text>
+          <Text style={styles.noteText}>Support will review your report and advise on completing or returning this delivery.</Text>
         </View>
       </ScrollView>
 
       <View style={styles.footer}>
         <Button label="Submit Issue Report" onPress={handleSubmit} />
-        <Button label="Call Support" variant="secondary" icon="phone" onPress={() => navigation.reset({index: 0, routes: [{name: 'Home'}]})} />
+        <Button label="Contact Support" variant="secondary" icon="phone" onPress={() => navigation.navigate('SupportHub')} />
       </View>
     </Screen>
   );
@@ -138,9 +150,6 @@ const styles = StyleSheet.create({
   },
   charCount: {...typography.caption, fontSize: 11, color: colors.textMuted, alignSelf: 'flex-end'},
   photoRow: {flexDirection: 'row', gap: spacing.sm},
-  photoThumb: {width: 80, height: 80, borderRadius: radius.sm, backgroundColor: colors.border, alignItems: 'center', justifyContent: 'center', overflow: 'hidden'},
-  photoTag: {position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', paddingVertical: 3, alignItems: 'center'},
-  photoTagText: {...typography.captionMedium, fontSize: 9, color: colors.white},
   addPhotoTile: {width: 80, height: 80, borderRadius: radius.sm, borderWidth: 1.5, borderColor: colors.borderStrong, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', gap: 4},
   addPhotoText: {...typography.captionMedium, fontSize: 10, color: colors.textMuted},
   noteBanner: {backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.sm},

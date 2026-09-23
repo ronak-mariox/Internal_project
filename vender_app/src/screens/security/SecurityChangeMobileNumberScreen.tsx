@@ -4,9 +4,12 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { useSecurity } from '../../context/SecurityContext';
 import { Button, InfoBanner, NavHeader, ScreenContainer } from '../../components';
+import { isValidMobile, type FormErrors } from '../../utils/validators';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'SecurityChangeMobileNumber'>;
+
+type Errors = FormErrors<'newNumber'>;
 
 function maskMobile(value: string): string {
   const digits = value.replace(/\D/g, '');
@@ -21,11 +24,14 @@ function formatMobile10(digits: string): string {
 export function SecurityChangeMobileNumberScreen({ navigation }: Props) {
   const { mobileNumber } = useSecurity();
   const [newNumber, setNewNumber] = useState('');
-
-  const isValid = /^\d{10}$/.test(newNumber);
+  const [errors, setErrors] = useState<Errors>({});
 
   function handleSendOtp() {
-    if (!isValid) return;
+    if (!isValidMobile(newNumber)) {
+      setErrors({ newNumber: 'Enter a valid 10-digit mobile number' });
+      return;
+    }
+    setErrors({});
     navigation.navigate('SecurityChangeMobileOtp', {
       newMobileNumber: formatMobile10(newNumber),
     });
@@ -58,7 +64,7 @@ export function SecurityChangeMobileNumberScreen({ navigation }: Props) {
 
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>New mobile number</Text>
-          <View style={styles.inputRow}>
+          <View style={[styles.inputRow, errors.newNumber && styles.inputRowError]}>
             <View style={styles.countryCode}>
               <Text style={styles.flag}>🇮🇳</Text>
               <Text style={styles.countryCodeText}>+91</Text>
@@ -67,14 +73,21 @@ export function SecurityChangeMobileNumberScreen({ navigation }: Props) {
             <TextInput
               style={styles.phoneInputText}
               value={newNumber}
-              onChangeText={text => setNewNumber(text.replace(/[^0-9]/g, '').slice(0, 10))}
+              onChangeText={text => {
+                setNewNumber(text.replace(/[^0-9]/g, '').slice(0, 10));
+                if (errors.newNumber) setErrors({});
+              }}
               placeholder="Enter 10-digit number"
               placeholderTextColor={colors.textTertiary}
               keyboardType="phone-pad"
               maxLength={10}
             />
           </View>
-          <Text style={styles.helperText}>An OTP will be sent to this number.</Text>
+          {errors.newNumber ? (
+            <Text style={styles.errorText}>{errors.newNumber}</Text>
+          ) : (
+            <Text style={styles.helperText}>An OTP will be sent to this number.</Text>
+          )}
         </View>
 
         <InfoBanner
@@ -83,7 +96,7 @@ export function SecurityChangeMobileNumberScreen({ navigation }: Props) {
         />
 
         <View style={styles.footer}>
-          <Button label="Send OTP" onPress={handleSendOtp} disabled={!isValid} />
+          <Button label="Send OTP" onPress={handleSendOtp} />
           <Text style={styles.footerCaption}>
             Your old number will receive a security alert when this change is confirmed.
           </Text>
@@ -179,6 +192,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     overflow: 'hidden',
   },
+  inputRowError: {
+    borderColor: colors.error,
+    backgroundColor: colors.errorSurface,
+  },
   countryCode: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -208,6 +225,10 @@ const styles = StyleSheet.create({
   helperText: {
     ...typography.caption,
     color: colors.textSecondary,
+  },
+  errorText: {
+    ...typography.caption,
+    color: colors.error,
   },
   footer: {
     marginTop: 'auto',

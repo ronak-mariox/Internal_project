@@ -28,8 +28,8 @@ import { Tabs, type TabItem } from '@/components/ui/Tabs';
 import { Modal } from '@/components/ui/Drawer';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { InlineAlert } from '@/components/ui/InlineAlert';
-import { driverPayouts } from '@/data/settlements';
-import type { Driver, DriverStatus, KycStatus, Order } from '@/types';
+import { mapDriverPayout, type ApiDriverPayout } from '@/lib/adminSettlements';
+import type { Driver, DriverPayoutSummary, DriverStatus, KycStatus, Order } from '@/types';
 import { ORDER_STATUS_META } from '@/types';
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/format';
 import { api, fetchAllPaginated } from '@/lib/api';
@@ -88,6 +88,7 @@ export function DriverDetail() {
   const [reloadKey, setReloadKey] = useState(0);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'deliveries' | 'payouts'>('deliveries');
+  const [payout, setPayout] = useState<DriverPayoutSummary | null>(null);
 
   useEffect(() => {
     if (!driverId) return;
@@ -104,10 +105,11 @@ export function DriverDetail() {
         // client-side is the only honest way to compute real delivery stats for
         // a single driver (sanctioned as a one-off cost on the detail page only,
         // unlike the drivers list which would turn this into an N+1 fetch).
-        const [allOrders, customers, vendors] = await Promise.all([
+        const [allOrders, customers, vendors, payouts] = await Promise.all([
           fetchAllPaginated<ApiOrder>('/admin/orders'),
           api.get<ApiCustomer[]>('/admin/customers'),
           api.get<ApiVendor[]>('/admin/vendors'),
+          api.get<ApiDriverPayout[]>('/admin/settlements/drivers'),
         ]);
         if (cancelled) return;
 
@@ -122,6 +124,8 @@ export function DriverDetail() {
         setDriverApi(d);
         setDriverOrders(matching.slice(0, 25).map((o) => mapOrder(o, customerById, vendorById, driverById)));
         setDeliveryStats({ totalDeliveries: matching.length, completionRate });
+        const driverPayout = payouts.map(mapDriverPayout).find((p) => p.driverId === driverId);
+        setPayout(driverPayout ?? null);
       } catch (err) {
         if (cancelled) return;
         if (err && typeof err === 'object' && 'status' in err && (err as { status: number }).status === 404) {
@@ -154,8 +158,6 @@ export function DriverDetail() {
       setUpdating(false);
     }
   }
-
-  const payouts = driverPayouts.filter((p) => p.driverId === driverId);
 
   if (loading) {
     return (
@@ -203,7 +205,7 @@ export function DriverDetail() {
 
   const tabItems: TabItem[] = [
     { value: 'deliveries', label: 'Recent Deliveries', count: driverOrders.length },
-    { value: 'payouts', label: 'Payouts', count: payouts.length },
+    { value: 'payouts', label: 'Payouts', count: payout ? 1 : 0 },
   ];
 
   return (
@@ -339,35 +341,33 @@ export function DriverDetail() {
               </tbody>
             </Table>
           )
-        ) : payouts.length === 0 ? (
-          <EmptyState icon={<IndianRupee size={22} />} title="No payouts yet" description="Payout history will appear here once generated." />
+        ) : !payout ? (
+          <EmptyState icon={<IndianRupee size={22} />} title="No payouts yet" description="Payout totals will appear here once earnings are recorded." />
         ) : (
           <Table>
             <Thead>
               <Tr>
-                <Th>Period</Th>
                 <Th>Deliveries</Th>
-                <Th>Base earnings</Th>
-                <Th>Incentives</Th>
-                <Th>Total</Th>
+                <Th>Pending</Th>
+                <Th>Settled</Th>
+                <Th>Paid</Th>
+                <Th>Total earnings</Th>
                 <Th>Status</Th>
-                <Th>Due date</Th>
+                <Th>Updated</Th>
               </Tr>
             </Thead>
             <tbody>
-              {payouts.map((p) => (
-                <Tr key={p.id}>
-                  <Td className="font-medium text-ink-700">{p.periodLabel}</Td>
-                  <Td>{p.deliveries}</Td>
-                  <Td>{formatCurrency(p.baseEarnings)}</Td>
-                  <Td>{formatCurrency(p.incentives)}</Td>
-                  <Td className="font-semibold text-ink-800">{formatCurrency(p.totalPayout)}</Td>
-                  <Td>
-                    <StatusBadge status={p.status} />
-                  </Td>
-                  <Td className="text-ink-500">{formatDate(p.dueDate)}</Td>
-                </Tr>
-              ))}
+              <Tr>
+                <Td>{payout.deliveries}</Td>
+                <Td>{formatCurrency(payout.pendingAmount)}</Td>
+                <Td>{formatCurrency(payout.settledAmount)}</Td>
+                <Td>{formatCurrency(payout.paidAmount)}</Td>
+                <Td className="font-semibold text-ink-800">{formatCurrency(payout.totalEarnings)}</Td>
+                <Td>
+                  <StatusBadge status={payout.status} />
+                </Td>
+                <Td className="text-ink-500">{formatDate(payout.updatedAt)}</Td>
+              </Tr>
             </tbody>
           </Table>
         )}

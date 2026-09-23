@@ -124,6 +124,7 @@ type StoreSetupContextValue = {
   updateAddress: (value: StoreAddressData) => void;
   updateOperatingHours: (value: OperatingHoursData) => void;
   addHoliday: (value: HolidayClosureItem) => void;
+  updateHoliday: (value: HolidayClosureItem) => void;
   removeHoliday: (id: string) => void;
   updateDelivery: (value: DeliverySettingsData) => void;
   updateServiceAvailability: (value: ServiceAvailabilityData) => void;
@@ -213,6 +214,9 @@ export function StoreSetupProvider({ children }: { children: React.ReactNode }) 
   const addHoliday = useCallback((value: HolidayClosureItem) => {
     setData(prev => ({ ...prev, holidays: [...prev.holidays, value] }));
   }, []);
+  const updateHoliday = useCallback((value: HolidayClosureItem) => {
+    setData(prev => ({ ...prev, holidays: prev.holidays.map(item => (item.id === value.id ? value : item)) }));
+  }, []);
   const removeHoliday = useCallback((id: string) => {
     setData(prev => ({ ...prev, holidays: prev.holidays.filter(item => item.id !== id) }));
   }, []);
@@ -240,6 +244,7 @@ export function StoreSetupProvider({ children }: { children: React.ReactNode }) 
       updateAddress,
       updateOperatingHours,
       addHoliday,
+      updateHoliday,
       removeHoliday,
       updateDelivery,
       updateServiceAvailability,
@@ -256,6 +261,7 @@ export function StoreSetupProvider({ children }: { children: React.ReactNode }) 
       updateAddress,
       updateOperatingHours,
       addHoliday,
+      updateHoliday,
       removeHoliday,
       updateDelivery,
       updateServiceAvailability,

@@ -1,14 +1,31 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CustomerUnavailable'>;
 
 export function CustomerUnavailableScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
+
+  const customerName = order?.address.contactName ?? 'Customer';
 
   return (
     <Screen edges={['top', 'bottom']}>
@@ -19,18 +36,17 @@ export function CustomerUnavailableScreen({route, navigation}: Props) {
       </View>
       <View style={styles.titleBlock}>
         <Text style={styles.title}>Customer Unavailable</Text>
-        <Text style={styles.subtitle}>Priya Mehta is not responding</Text>
+        <Text style={styles.subtitle}>{customerName} is not responding</Text>
       </View>
       <View style={styles.tagsRow}>
         <View style={styles.tag}>
-          <Text style={styles.tagText}>#{orderId}</Text>
+          <Text style={styles.tagText}>#{order?.orderNumber ?? orderId}</Text>
         </View>
-        <View style={styles.tag}>
-          <Text style={styles.tagTextMuted}>HSR Layout</Text>
-        </View>
-        <View style={styles.riskTag}>
-          <Text style={styles.riskTagText}>₹82 earnings at risk</Text>
-        </View>
+        {!!order?.address.city && (
+          <View style={styles.tag}>
+            <Text style={styles.tagTextMuted}>{order.address.city}</Text>
+          </View>
+        )}
       </View>
 
       <ScrollView style={styles.flex} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
@@ -45,7 +61,7 @@ export function CustomerUnavailableScreen({route, navigation}: Props) {
             </View>
           </View>
           <Button
-            label="Call Priya Mehta"
+            label={`Call ${customerName}`}
             style={styles.callButton}
             onPress={() => navigation.navigate('CallingException', {orderId})}
           />
@@ -120,8 +136,6 @@ const styles = StyleSheet.create({
   tag: {backgroundColor: colors.background, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 4},
   tagText: {...typography.captionSemibold, color: colors.textPrimary},
   tagTextMuted: {...typography.caption, color: colors.textSecondary},
-  riskTag: {backgroundColor: '#FEF3C7', borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 4},
-  riskTagText: {...typography.captionSemibold, color: colors.warningText},
   flex: {flex: 1},
   body: {padding: spacing.xl, gap: spacing.md},
   optionCard: {backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.lg, gap: spacing.md},

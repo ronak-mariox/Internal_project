@@ -24,6 +24,7 @@ import { ORDER_STATUS_META, useOrders } from '../../context/OrdersContext';
 import { useNotifications } from '../../context/NotificationsContext';
 import { useDisputes } from '../../context/DisputesContext';
 import { resolveVendorEntryRoute } from '../../utils/vendorRouting';
+import { api } from '../../services/api';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Dashboard'>;
@@ -43,9 +44,52 @@ const QUICK_ACTIONS: { icon: IconName; label: string; background: string; color:
   { icon: 'alert-triangle', label: 'Disputes', background: '#FFFAEB', color: '#B45309' },
 ];
 
-const REVENUE_BARS = [30, 37.5, 22.5, 45, 40, 47.5, 35];
-const REVENUE_DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-const TODAY_BAR_INDEX = 5;
+const WEEKDAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+type KpiStat = {
+  key: 'revenue' | 'orders' | 'avgOrder' | 'cancelled';
+  label: string;
+  value: string;
+  changeLabel: string;
+  direction: 'up' | 'down' | 'flat';
+  sparkline: number[];
+};
+
+type OverviewResponse = { kpiStats: KpiStat[]; revenueTrend: number[]; revenueDates: string[] };
+
+function toDateKey(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+/** Pulls the short "12%" out of a full changeLabel like "↑ 12% vs previous period",
+ * for the compact trend badge — which only ever makes sense to show on an upward trend. */
+function upwardTrendBadge(kpi: KpiStat | undefined) {
+  if (!kpi || kpi.direction !== 'up') return undefined;
+  const match = kpi.changeLabel.match(/\d+%/);
+  return match ? match[0] : undefined;
+}
+
+function describeAlertProducts(products: { name: string }[], suffix?: string) {
+  const names = products.slice(0, 2).map(p => p.name);
+  const extra = products.length > 2 ? ` +${products.length - 2}` : '';
+  const countLabel = `${products.length} product${products.length === 1 ? '' : 's'}`;
+  return `${countLabel}${suffix ? ` ${suffix}` : ''} · ${names.join(', ')}${extra}`;
+}
+
+/** Builds a fixed 7-entry, oldest-to-newest series for the last 7 calendar days,
+ * filling in 0 for any day the backend's variable-length, gap-skipping series omits. */
+function buildLast7DaysSeries(dates: string[], values: number[]) {
+  const valueByDate = new Map(dates.map((d, i) => [d, values[i] ?? 0]));
+  const today = new Date();
+  const days: { key: string; label: string; value: number; isToday: boolean }[] = [];
+  for (let i = 6; i >= 0; i -= 1) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const key = toDateKey(d);
+    days.push({ key, label: WEEKDAY_LETTERS[d.getDay()], value: valueByDate.get(key) ?? 0, isToday: i === 0 });
+  }
+  return days;
+}
 
 const DEBUG_OPTIONS: { value: DebugView; label: string }[] = [
   { value: 'auto', label: 'Live (based on real setup progress)' },
@@ -165,6 +209,10 @@ export function DashboardScreen({ navigation }: Props) {
     }
     if (label === 'Analytics') {
       navigation.navigate('AnalyticsOverview');
+      return;
+    }
+    if (label === 'Store') {
+      navigation.navigate('ProfileStoreInfo');
       return;
     }
     if (label === 'Help' || label === 'Contact Support') {
@@ -431,6 +479,7 @@ function MainDashboard({
 }) {
   const { orders: allOrders } = useOrders();
   const { unreadCount } = useNotifications();
+  const { products } = useProductCatalog();
   const orders = showOrders ? allOrders : [];
   const pending = orders.filter(order => order.status === 'new').length;
   const preparing = orders.filter(order =>
@@ -439,7 +488,44 @@ function MainDashboard({
   const ready = orders.filter(order =>
     ['ready-for-dispatch', 'dispatched'].includes(order.status),
   ).length;
-  const completed = orders.filter(order => order.status === 'completed').length + (showOrders ? 27 : 0);
+  const completed = orders.filter(order => order.status === 'completed').length;
+
+  const [todayStats, setTodayStats] = useState<OverviewResponse | null>(null);
+  const [weekStats, setWeekStats] = useState<OverviewResponse | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setStatsLoading(true);
+    Promise.all([
+      api.get<OverviewResponse>('/vendor/analytics/overview', { params: { period: 'today' } }),
+      api.get<OverviewResponse>('/vendor/analytics/overview', { params: { period: 'week' } }),
+    ])
+      .then(([today, week]) => {
+        if (cancelled) return;
+        setTodayStats(today.data);
+        setWeekStats(week.data);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setStatsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const ordersKpi = todayStats?.kpiStats.find(k => k.key === 'orders');
+  const revenueKpi = todayStats?.kpiStats.find(k => k.key === 'revenue');
+  const weekRevenueKpi = weekStats?.kpiStats.find(k => k.key === 'revenue');
+
+  const lowStockProducts = products.filter(p => p.status === 'low-stock');
+  const outOfStockProducts = products.filter(p => p.status === 'out-of-stock');
+
+  const revenueDays = weekStats
+    ? buildLast7DaysSeries(weekStats.revenueDates, weekStats.revenueTrend)
+    : [];
+  const maxRevenueValue = Math.max(1, ...revenueDays.map(d => d.value));
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
@@ -483,19 +569,19 @@ function MainDashboard({
                 icon="package"
                 iconColor={colors.primary}
                 iconBackground={colors.primarySurface}
-                value="47"
+                value={statsLoading ? '—' : ordersKpi?.value ?? '0'}
                 label="Total Orders"
-                sublabel="vs 38 yesterday"
-                trend="12%"
+                sublabel={ordersKpi?.changeLabel ?? 'Today'}
+                trend={upwardTrendBadge(ordersKpi)}
               />
               <MetricCard
                 icon="credit-card"
                 iconColor="#059669"
                 iconBackground="#D1FAE5"
-                value="₹12.4K"
+                value={statsLoading ? '—' : revenueKpi?.value ?? '₹0'}
                 label="Today's Sales"
-                sublabel="Revenue"
-                trend="12%"
+                sublabel={revenueKpi?.changeLabel ?? 'Revenue'}
+                trend={upwardTrendBadge(revenueKpi)}
               />
             </View>
           </View>
@@ -569,33 +655,39 @@ function MainDashboard({
 
         <QuickActionsRow onPress={onQuickAction} />
 
-        {showOrders ? (
+        {showOrders && (lowStockProducts.length > 0 || outOfStockProducts.length > 0) ? (
           <View style={styles.sectionBlock}>
             <Text style={styles.sectionLabel}>Alerts</Text>
             <View style={styles.alertsList}>
-              <View style={[styles.alertCard, styles.alertCardWarning]}>
-                <Icon name="alert-triangle" size={18} color={colors.warningDark} />
-                <View style={styles.alertTextColumn}>
-                  <Text style={styles.alertTitleWarning}>Low Stock Alert</Text>
-                  <Text style={styles.alertBodyWarning}>5 products running low · Tata Salt, Amul Milk +3</Text>
+              {lowStockProducts.length > 0 ? (
+                <View style={[styles.alertCard, styles.alertCardWarning]}>
+                  <Icon name="alert-triangle" size={18} color={colors.warningDark} />
+                  <View style={styles.alertTextColumn}>
+                    <Text style={styles.alertTitleWarning}>Low Stock Alert</Text>
+                    <Text style={styles.alertBodyWarning}>{describeAlertProducts(lowStockProducts, 'running low')}</Text>
+                  </View>
+                  <Pressable onPress={() => onQuickAction('Inventory')}>
+                    <Text style={styles.alertActionWarning}>View →</Text>
+                  </Pressable>
                 </View>
-                <Pressable onPress={() => onQuickAction('Inventory')}>
-                  <Text style={styles.alertActionWarning}>View →</Text>
-                </Pressable>
-              </View>
-              <View style={[styles.alertCard, styles.alertCardError]}>
-                <Icon name="alert-circle" size={18} color={colors.error} />
-                <View style={styles.alertTextColumn}>
-                  <Text style={styles.alertTitleError}>Out of Stock</Text>
-                  <Text style={styles.alertBodyError}>2 products · Fortune Atta 5kg, Surf Excel 1kg</Text>
+              ) : null}
+              {outOfStockProducts.length > 0 ? (
+                <View style={[styles.alertCard, styles.alertCardError]}>
+                  <Icon name="alert-circle" size={18} color={colors.error} />
+                  <View style={styles.alertTextColumn}>
+                    <Text style={styles.alertTitleError}>Out of Stock</Text>
+                    <Text style={styles.alertBodyError}>{describeAlertProducts(outOfStockProducts)}</Text>
+                  </View>
+                  <Pressable onPress={() => onQuickAction('Inventory')}>
+                    <Text style={styles.alertActionError}>Fix →</Text>
+                  </Pressable>
                 </View>
-                <Pressable onPress={() => onQuickAction('Inventory')}>
-                  <Text style={styles.alertActionError}>Fix →</Text>
-                </Pressable>
-              </View>
+              ) : null}
             </View>
           </View>
-        ) : (
+        ) : null}
+
+        {!showOrders && (
           <View style={styles.sectionBlock}>
             <View style={styles.emptyOrdersCard}>
               <View style={styles.emptyOrdersIcon}>
@@ -672,31 +764,33 @@ function MainDashboard({
             <View style={styles.revenueHeader}>
               <View>
                 <Text style={styles.sectionLabel}>Weekly Revenue</Text>
-                <Text style={styles.revenueValue}>₹ 84,230</Text>
+                <Text style={styles.revenueValue}>{statsLoading ? '—' : weekRevenueKpi?.value ?? '₹0'}</Text>
               </View>
-              <View style={styles.revenueTrendPill}>
-                <Icon name="trending-up" size={11} color={colors.primary} />
-                <Text style={styles.revenueTrendText}>+18.4%</Text>
-              </View>
+              {weekRevenueKpi?.direction === 'up' ? (
+                <View style={styles.revenueTrendPill}>
+                  <Icon name="trending-up" size={11} color={colors.primary} />
+                  <Text style={styles.revenueTrendText}>{upwardTrendBadge(weekRevenueKpi)}</Text>
+                </View>
+              ) : null}
             </View>
             <View style={styles.revenueBarsRow}>
-              {REVENUE_BARS.map((height, index) => (
+              {revenueDays.map(day => (
                 <View
-                  key={index}
+                  key={day.key}
                   style={[
                     styles.revenueBar,
                     {
-                      height,
-                      backgroundColor: index === TODAY_BAR_INDEX ? colors.primary : colors.border,
+                      height: Math.max(4, (day.value / maxRevenueValue) * 48),
+                      backgroundColor: day.isToday ? colors.primary : colors.border,
                     },
                   ]}
                 />
               ))}
             </View>
             <View style={styles.revenueDaysRow}>
-              {REVENUE_DAYS.map((day, index) => (
-                <Text key={index} style={styles.revenueDayLabel}>
-                  {day}
+              {revenueDays.map(day => (
+                <Text key={day.key} style={styles.revenueDayLabel}>
+                  {day.label}
                 </Text>
               ))}
             </View>

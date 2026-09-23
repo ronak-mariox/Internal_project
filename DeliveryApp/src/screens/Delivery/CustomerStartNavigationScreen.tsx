@@ -1,24 +1,53 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import Svg, {Circle, Line} from 'react-native-svg';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CustomerStartNavigation'>;
 
-const ROUTES = [
-  {id: 'orr', label: 'via Outer Ring Road', duration: '18 min'},
-  {id: 'hundred-feet', label: 'via 100 Feet Road', duration: '22 min'},
-];
-
 const APPS = ['Google Maps', 'Waze', 'Ola Maps'];
+
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 export function CustomerStartNavigationScreen({route, navigation}: Props) {
   const {orderId} = route.params;
-  const [selectedRoute, setSelectedRoute] = useState(ROUTES[0].id);
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
   const [selectedApp, setSelectedApp] = useState(APPS[0]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
+
+  const customerName = order?.address.contactName ?? 'Customer';
+  const addressLine = order ? [order.address.line1, order.address.city].filter(Boolean).join(', ') : '';
+
+  const distanceKm =
+    order?.pickup.latitude != null &&
+    order?.pickup.longitude != null &&
+    order?.address.latitude != null &&
+    order?.address.longitude != null
+      ? haversineKm(order.pickup.latitude, order.pickup.longitude, order.address.latitude, order.address.longitude)
+      : null;
 
   return (
     <Screen backgroundColor={colors.dark900} statusBarStyle="light-content" edges={['top']}>
@@ -30,42 +59,17 @@ export function CustomerStartNavigationScreen({route, navigation}: Props) {
         <View style={styles.homePin}>
           <Icon name="alert-circle" size={18} color={colors.white} />
         </View>
-        <View style={styles.distancePill}>
-          <Text style={styles.distancePillText}>4.8 km</Text>
-        </View>
+        {distanceKm != null && (
+          <View style={styles.distancePill}>
+            <Text style={styles.distancePillText}>{distanceKm.toFixed(1)} km</Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.sheet}>
         <View style={styles.grabber} />
         <Text style={styles.title}>Navigate to Customer</Text>
-        <Text style={styles.subtitle}>Priya Mehta · HSR Layout Sector 2</Text>
-
-        <View style={styles.etaCard}>
-          <Icon name="clock" size={20} color={colors.textPrimary} />
-          <View style={styles.etaText}>
-            <Text style={styles.etaTitle}>18 min · Arriving ~3:02 PM</Text>
-            <Text style={styles.etaSubtitle}>via current fastest route</Text>
-          </View>
-        </View>
-
-        <Text style={styles.sectionLabel}>ROUTE OPTIONS</Text>
-        <View style={styles.routeList}>
-          {ROUTES.map(r => {
-            const selected = r.id === selectedRoute;
-            return (
-              <TouchableOpacity
-                key={r.id}
-                style={[styles.routeOption, selected && styles.routeOptionSelected]}
-                activeOpacity={0.8}
-                onPress={() => setSelectedRoute(r.id)}>
-                <Text style={styles.routeOptionLabel}>{r.label}</Text>
-                <Text style={styles.routeOptionDuration}>
-                  {r.duration} {selected ? '●' : '○'}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        {!!addressLine && <Text style={styles.subtitle}>{customerName} · {addressLine}</Text>}
 
         <Text style={styles.sectionLabel}>OPEN IN</Text>
         <View style={styles.appRow}>
@@ -113,25 +117,7 @@ const styles = StyleSheet.create({
   grabber: {width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: spacing.xs},
   title: {...typography.titleSm, color: colors.textPrimary},
   subtitle: {...typography.label, color: colors.textSecondary, marginTop: -spacing.xxs, marginBottom: spacing.xs},
-  etaCard: {flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.background, borderRadius: radius.lg, padding: spacing.md},
-  etaText: {flex: 1},
-  etaTitle: {...typography.bodyLgMedium, color: colors.textPrimary},
-  etaSubtitle: {...typography.caption, color: colors.textSecondary, marginTop: 1},
   sectionLabel: {...typography.overline, color: colors.textSecondary, letterSpacing: 0.5, marginTop: spacing.sm},
-  routeList: {gap: spacing.xs},
-  routeOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-  },
-  routeOptionSelected: {borderColor: colors.primary, backgroundColor: colors.primarySurfaceAlt},
-  routeOptionLabel: {...typography.bodyMedium, color: colors.textPrimary},
-  routeOptionDuration: {...typography.caption, color: colors.textSecondary},
   appRow: {flexDirection: 'row', gap: spacing.sm},
   appOption: {flex: 1, height: 43, borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center'},
   appLabel: {...typography.captionMedium, color: colors.textPrimary},

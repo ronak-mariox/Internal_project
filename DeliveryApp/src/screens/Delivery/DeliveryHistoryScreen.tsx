@@ -1,56 +1,61 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
-import {Button, Icon} from '../../components';
+import {EmptyState, Icon, Loader} from '../../components';
 import {colors, radius, shadows, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'DeliveryHistory'>;
 
 type Tab = 'All' | 'Active' | 'Completed' | 'Cancelled';
 const TABS: Tab[] = ['All', 'Active', 'Completed', 'Cancelled'];
 
-type Status = 'delivered' | 'cancelled' | 'failed';
+function formatDateTime(iso?: string): string {
+  if (!iso) {
+    return '';
+  }
+  const d = new Date(iso);
+  return `${d.toLocaleDateString([], {month: 'short', day: 'numeric'})}, ${d.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}`;
+}
 
-const ALL_ITEMS: {orderId: string; route: string; amount: string; status: Status; time: string}[] = [
-  {orderId: 'VR-84821', route: 'Swiggy → HSR', amount: '₹82', status: 'delivered', time: 'Sep 6, 3:04 PM'},
-  {orderId: 'VR-84815', route: "McDonald's → Koramangala", amount: '₹94', status: 'delivered', time: 'Sep 6, 1:32 PM'},
-  {orderId: 'VR-84803', route: 'BigBasket → Ejipura', amount: '₹76', status: 'delivered', time: 'Sep 6, 12:48 PM'},
-  {orderId: 'VR-84790', route: "Domino's → Indiranagar", amount: '₹0', status: 'cancelled', time: 'Sep 5, 8:22 PM'},
-  {orderId: 'VR-84780', route: 'Zomato → BTM', amount: '₹40', status: 'failed', time: 'Sep 5, 2:10 PM'},
-];
+function lastEventAt(order: DeliveryOrder): string | undefined {
+  return order.statusHistory[order.statusHistory.length - 1]?.at ?? order.updatedAt;
+}
 
-const STATUS_META: Record<Status, {label: string; dot: string; bg: string; text: string}> = {
-  delivered: {label: 'DELIVERED', dot: colors.primary, bg: colors.primarySurface, text: colors.primary},
-  cancelled: {label: 'CANCELLED', dot: colors.textMuted, bg: '#F3F4F6', text: '#6B7280'},
-  failed: {label: 'FAILED', dot: '#D92D20', bg: '#FEF3F2', text: '#D92D20'},
-};
-
-const COMPLETED_ITEMS = [
-  {orderId: 'VR-84821', amount: '₹82', time: 'Sep 6, 3:04 PM · HSR Layout', duration: '22 min'},
-  {orderId: 'VR-84815', amount: '₹94', time: 'Sep 6, 1:32 PM · Koramangala', duration: '35 min'},
-  {orderId: 'VR-84803', amount: '₹76', time: 'Sep 6, 12:48 PM · Ejipura', duration: '28 min'},
-  {orderId: 'VR-84796', amount: '₹62', time: 'Sep 5, 6:44 PM · BTM Layout', duration: '19 min'},
-  {orderId: 'VR-84782', amount: '₹114', time: 'Sep 5, 2:18 PM · Indiranagar', duration: '41 min'},
-  {orderId: 'VR-84770', amount: '₹88', time: 'Sep 4, 8:32 PM · Whitefield', duration: '31 min'},
-];
-
-const DATE_RANGES = ['Today', 'This Week', 'This Month', 'Custom'];
-
-const CANCELLED_ITEMS = [
-  {orderId: 'VR-84790', route: "Domino's → Indiranagar", time: 'Sep 5, 8:22 PM', reason: 'Customer cancelled', amount: '₹0 earned', amountGreen: false},
-  {orderId: 'VR-84761', route: 'BigBasket → Ejipura', time: 'Sep 2, 5:15 PM', reason: 'Store issue', amount: '₹25 (cancellation fee)', amountGreen: true},
-  {orderId: 'VR-84732', route: "McDonald's → HSR", time: 'Aug 29, 1:40 PM', reason: 'Rider cancelled', amount: '₹0', amountGreen: false},
-];
-
-const RECENTLY_STARTED = [
-  {orderId: 'VR-84826', status: 'Pickup in progress — McDonald\'s'},
-  {orderId: 'VR-84827', status: 'Waiting for order — BigBasket'},
-];
+function routeText(order: DeliveryOrder): string {
+  return `${order.pickup.name} → ${order.address.city}`;
+}
 
 export function DeliveryHistoryScreen({navigation}: Props) {
   const [tab, setTab] = useState<Tab>('All');
-  const [dateRange, setDateRange] = useState('This Week');
+  const {
+    activeOrders,
+    historyOrders,
+    isLoadingActive,
+    isLoadingHistory,
+    refreshActive,
+    refreshHistory,
+  } = useOrders();
+
+  useEffect(() => {
+    if (tab === 'Active') {
+      refreshActive();
+    } else if (tab === 'Completed') {
+      refreshHistory('completed');
+    } else if (tab === 'Cancelled') {
+      refreshHistory('cancelled');
+    } else {
+      refreshHistory('all');
+    }
+  }, [tab, refreshActive, refreshHistory]);
+
+  const deliveredOrders = historyOrders.filter(o => o.status === 'delivered');
+  const cancelledOrders = historyOrders.filter(o => o.status === 'cancelled');
+  const totalEarnings = deliveredOrders.reduce((sum, o) => sum + (o.driverEarnings?.total ?? 0), 0);
+  const avgEarnings = deliveredOrders.length ? Math.round((totalEarnings / deliveredOrders.length) * 10) / 10 : 0;
+  const bestEarnings = deliveredOrders.reduce((max, o) => Math.max(max, o.driverEarnings?.total ?? 0), 0);
+  const isLoading = tab === 'Active' ? isLoadingActive : isLoadingHistory;
 
   return (
     <View style={styles.container}>
@@ -59,23 +64,21 @@ export function DeliveryHistoryScreen({navigation}: Props) {
           <Icon name="chevron-left" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Delivery History</Text>
-        <TouchableOpacity hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
-          <Icon name="filter" size={20} color={colors.textPrimary} />
-        </TouchableOpacity>
+        <View style={{width: 22}} />
       </View>
 
-      {tab === 'All' && (
+      {tab === 'All' && historyOrders.length > 0 && (
         <View style={styles.statsRow}>
           <View style={styles.statTile}>
-            <Text style={styles.statValue}>142</Text>
+            <Text style={styles.statValue}>{historyOrders.length}</Text>
             <Text style={styles.statLabel}>Total</Text>
           </View>
           <View style={styles.statTile}>
-            <Text style={styles.statValue}>18</Text>
-            <Text style={styles.statLabel}>This Month</Text>
+            <Text style={styles.statValue}>{deliveredOrders.length}</Text>
+            <Text style={styles.statLabel}>Delivered</Text>
           </View>
           <View style={styles.statTile}>
-            <Text style={styles.statValue}>₹8,240</Text>
+            <Text style={styles.statValue}>{`₹${totalEarnings}`}</Text>
             <Text style={styles.statLabel}>Earnings</Text>
           </View>
         </View>
@@ -89,176 +92,150 @@ export function DeliveryHistoryScreen({navigation}: Props) {
         ))}
       </ScrollView>
 
-      {tab === 'Completed' && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateRow} style={styles.dateScroll}>
-          {DATE_RANGES.map(d => (
-            <TouchableOpacity key={d} style={[styles.datePill, dateRange === d && styles.datePillActive]} activeOpacity={0.8} onPress={() => setDateRange(d)}>
-              <Text style={[styles.datePillText, dateRange === d && styles.datePillTextActive]}>{d}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      )}
-
-      {tab === 'Completed' && (
-        <View style={styles.summaryBanner}>
-          <Text style={styles.summaryBannerText}>18 deliveries · ₹1,284 earned this week</Text>
-        </View>
-      )}
-
-      {tab === 'Cancelled' && (
-        <View style={styles.plainBanner}>
-          <Text style={styles.plainBannerText}>3 cancellations this month</Text>
-        </View>
-      )}
-
       <ScrollView style={styles.flex} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-        {tab === 'All' &&
-          ALL_ITEMS.map(item => {
-            const meta = STATUS_META[item.status];
+        {isLoading && <Loader label="Loading…" />}
+
+        {!isLoading && tab === 'All' && historyOrders.length === 0 && (
+          <EmptyState icon="clock" title="No deliveries yet" description="Your completed and cancelled deliveries will show up here." />
+        )}
+        {!isLoading &&
+          tab === 'All' &&
+          historyOrders.map(item => {
+            const isDelivered = item.status === 'delivered';
             return (
               <TouchableOpacity
-                key={item.orderId}
+                key={item.id}
                 style={styles.allRow}
                 activeOpacity={0.7}
                 onPress={() => {
-                  if (item.status === 'delivered') {
-                    navigation.navigate('DeliveryHistoryDetail', {orderId: item.orderId});
-                  } else if (item.status === 'cancelled') {
-                    setTab('Cancelled');
+                  if (isDelivered) {
+                    navigation.navigate('DeliveryHistoryDetail', {orderId: item.id});
                   } else {
-                    navigation.navigate('FailedDeliveries');
+                    setTab('Cancelled');
                   }
                 }}>
-                <View style={[styles.dot, {backgroundColor: meta.dot}]} />
+                <View style={[styles.dot, {backgroundColor: isDelivered ? colors.primary : colors.textMuted}]} />
                 <View style={styles.flex}>
                   <View style={styles.allRowTop}>
-                    <Text style={styles.allOrderId}>#{item.orderId}</Text>
-                    <Text style={styles.allAmount}>{item.amount}</Text>
+                    <Text style={styles.allOrderId}>#{item.orderNumber}</Text>
+                    <Text style={styles.allAmount}>{isDelivered ? `₹${item.driverEarnings?.total ?? 0}` : '₹0'}</Text>
                   </View>
                   <View style={styles.allRowMid}>
-                    <Text style={styles.allRouteText}>{item.route}</Text>
-                    <View style={[styles.statusPill, {backgroundColor: meta.bg}]}>
-                      <Text style={[styles.statusPillText, {color: meta.text}]}>{meta.label}</Text>
+                    <Text style={styles.allRouteText}>{routeText(item)}</Text>
+                    <View style={[styles.statusPill, {backgroundColor: isDelivered ? colors.primarySurface : '#F3F4F6'}]}>
+                      <Text style={[styles.statusPillText, {color: isDelivered ? colors.primary : '#6B7280'}]}>
+                        {isDelivered ? 'DELIVERED' : 'CANCELLED'}
+                      </Text>
                     </View>
                   </View>
-                  <Text style={styles.allTime}>{item.time}</Text>
+                  <Text style={styles.allTime}>{formatDateTime(item.deliveredAt ?? lastEventAt(item))}</Text>
                 </View>
               </TouchableOpacity>
             );
           })}
-        {tab === 'All' && (
-          <TouchableOpacity style={styles.loadMore} activeOpacity={0.7}>
-            <Text style={styles.loadMoreText}>Load more</Text>
-          </TouchableOpacity>
-        )}
 
-        {tab === 'Active' && (
-          <>
-            <View style={styles.activeCard}>
+        {!isLoading && tab === 'Active' && activeOrders.length === 0 && (
+          <EmptyState icon="scooter" title="No active deliveries" description="Orders you accept will show up here." />
+        )}
+        {!isLoading &&
+          tab === 'Active' &&
+          activeOrders.map(item => (
+            <TouchableOpacity
+              key={item.id}
+              style={styles.activeCard}
+              activeOpacity={0.85}
+              onPress={() => navigation.navigate('HomeActiveDelivery', {orderId: item.id})}>
               <View style={styles.activeTopRow}>
                 <View style={styles.flex}>
-                  <Text style={styles.activeOrderId}>#VR-84828</Text>
-                  <Text style={styles.activeStore}>Swiggy Instamart, Koramangala</Text>
+                  <Text style={styles.activeOrderId}>#{item.orderNumber}</Text>
+                  <Text style={styles.activeStore}>{item.pickup.name}</Text>
                 </View>
-                <Text style={styles.activeAmount}>₹78</Text>
+                <Text style={styles.activeAmount}>{`₹${item.pricing.grandTotal}`}</Text>
               </View>
               <View style={styles.activeStatusRow}>
                 <View style={styles.activeStatusDot} />
-                <Text style={styles.activeStatusText}>En Route to Customer</Text>
+                <Text style={styles.activeStatusText}>
+                  {item.status === 'out_for_delivery' ? 'En Route to Customer' : 'Heading to Store'}
+                </Text>
               </View>
               <View style={styles.activeMetaRow}>
                 <View>
                   <Text style={styles.activeMetaLabel}>Customer</Text>
-                  <Text style={styles.activeMetaValue}>Indiranagar 5th Main</Text>
+                  <Text style={styles.activeMetaValue}>{item.address.line1}</Text>
                 </View>
                 <View>
-                  <Text style={styles.activeMetaLabel}>Remaining</Text>
-                  <Text style={styles.activeMetaValue}>2.1 km</Text>
-                </View>
-                <View>
-                  <Text style={styles.activeMetaLabel}>ETA</Text>
-                  <Text style={styles.activeMetaValue}>12 min</Text>
+                  <Text style={styles.activeMetaLabel}>City</Text>
+                  <Text style={styles.activeMetaValue}>{item.address.city}</Text>
                 </View>
               </View>
-              <Text style={styles.activeEarningsNote}>Earnings: ₹78 (pending)</Text>
-              <Button label="View Details" onPress={() => navigation.navigate('HomeActiveDelivery', {orderId: 'VR-84828'})} />
-            </View>
+              <Text style={styles.activeEarningsNote}>{`Earnings: ₹${item.pricing.grandTotal} (pending)`}</Text>
+            </TouchableOpacity>
+          ))}
 
-            <Text style={styles.sectionLabel}>RECENTLY STARTED</Text>
-            {RECENTLY_STARTED.map(item => (
-              <View key={item.orderId} style={styles.recentRow}>
-                <View style={styles.flex}>
-                  <Text style={styles.recentOrderId}>#{item.orderId}</Text>
-                  <Text style={styles.recentStatus}>{item.status}</Text>
-                </View>
-                <View style={styles.recentDot} />
-              </View>
-            ))}
-          </>
+        {!isLoading && tab === 'Completed' && deliveredOrders.length === 0 && (
+          <EmptyState icon="check-circle" title="No completed deliveries" description="Deliveries you finish will show up here." />
         )}
-
-        {tab === 'Completed' &&
-          COMPLETED_ITEMS.map(item => (
+        {!isLoading &&
+          tab === 'Completed' &&
+          deliveredOrders.map(item => (
             <TouchableOpacity
-              key={item.orderId}
+              key={item.id}
               style={styles.completedRow}
               activeOpacity={0.7}
-              onPress={() => navigation.navigate('DeliveryHistoryDetail', {orderId: item.orderId})}>
+              onPress={() => navigation.navigate('DeliveryHistoryDetail', {orderId: item.id})}>
               <View style={[styles.dot, {backgroundColor: colors.primary}]} />
               <View style={styles.flex}>
                 <View style={styles.allRowTop}>
-                  <Text style={styles.allOrderId}>#{item.orderId}</Text>
-                  <Text style={styles.completedAmount}>{item.amount}</Text>
+                  <Text style={styles.allOrderId}>#{item.orderNumber}</Text>
+                  <Text style={styles.completedAmount}>{`₹${item.driverEarnings?.total ?? 0}`}</Text>
                 </View>
-                <View style={styles.allRowTop}>
-                  <Text style={styles.completedTime}>{item.time}</Text>
-                  <Text style={styles.completedDuration}>{item.duration}</Text>
-                </View>
+                <Text style={styles.completedTime}>{formatDateTime(item.deliveredAt)}</Text>
               </View>
               <Icon name="chevron-right" size={14} color={colors.textMuted} />
             </TouchableOpacity>
           ))}
-        {tab === 'Completed' && (
+        {!isLoading && tab === 'Completed' && deliveredOrders.length > 0 && (
           <View style={styles.completedFooter}>
             <View style={styles.completedFooterCol}>
-              <Text style={styles.completedFooterValue}>₹1,284</Text>
+              <Text style={styles.completedFooterValue}>{`₹${totalEarnings}`}</Text>
               <Text style={styles.completedFooterLabel}>Total</Text>
             </View>
             <View style={styles.completedFooterDivider} />
             <View style={styles.completedFooterCol}>
-              <Text style={styles.completedFooterValue}>₹71.3</Text>
+              <Text style={styles.completedFooterValue}>{`₹${avgEarnings}`}</Text>
               <Text style={styles.completedFooterLabel}>Avg</Text>
             </View>
             <View style={styles.completedFooterDivider} />
             <View style={styles.completedFooterCol}>
-              <Text style={[styles.completedFooterValue, styles.completedFooterValueGreen]}>₹114</Text>
+              <Text style={[styles.completedFooterValue, styles.completedFooterValueGreen]}>{`₹${bestEarnings}`}</Text>
               <Text style={styles.completedFooterLabel}>Best</Text>
             </View>
           </View>
         )}
 
-        {tab === 'Cancelled' &&
-          CANCELLED_ITEMS.map(item => (
-            <View key={item.orderId} style={styles.cancelCard}>
+        {!isLoading && tab === 'Cancelled' && cancelledOrders.length === 0 && (
+          <EmptyState icon="x-circle" title="No cancelled deliveries" description="Deliveries that get cancelled will show up here." />
+        )}
+        {!isLoading &&
+          tab === 'Cancelled' &&
+          cancelledOrders.map(item => (
+            <View key={item.id} style={styles.cancelCard}>
               <View style={styles.allRowTop}>
-                <Text style={styles.allOrderId}>#{item.orderId}</Text>
+                <Text style={styles.allOrderId}>#{item.orderNumber}</Text>
                 <View style={styles.cancelledPill}>
                   <Text style={styles.cancelledPillText}>CANCELLED</Text>
                 </View>
               </View>
-              <Text style={styles.cancelRoute}>{item.route}</Text>
-              <Text style={styles.cancelTime}>{item.time}</Text>
-              <View style={styles.cancelBottomRow}>
-                <Text style={styles.cancelReason}>{item.reason}</Text>
-                <Text style={[styles.cancelAmount, item.amountGreen && styles.cancelAmountGreen]}>{item.amount}</Text>
-              </View>
+              <Text style={styles.cancelRoute}>{routeText(item)}</Text>
+              <Text style={styles.cancelTime}>{formatDateTime(lastEventAt(item))}</Text>
+              <Text style={styles.cancelReason}>{item.cancelReason ?? `Cancelled by ${item.cancelledBy ?? 'system'}`}</Text>
             </View>
           ))}
-        {tab === 'Cancelled' && (
-          <View style={styles.infoBanner}>
+        {!isLoading && tab === 'Cancelled' && (
+          <TouchableOpacity style={styles.infoBanner} activeOpacity={0.8} onPress={() => navigation.navigate('FailedDeliveries')}>
             <Icon name="info" size={16} color={colors.primary} />
-            <Text style={styles.infoBannerText}>Cancellation fee applies when customer cancels after order was picked up.</Text>
-          </View>
+            <Text style={styles.infoBannerText}>Deliveries you reported as undeliverable — view them here.</Text>
+          </TouchableOpacity>
         )}
       </ScrollView>
     </View>
@@ -290,16 +267,6 @@ const styles = StyleSheet.create({
   tabPillActive: {backgroundColor: colors.primary},
   tabPillText: {...typography.labelSemibold, fontSize: 13, color: colors.textSecondary},
   tabPillTextActive: {color: colors.white},
-  dateScroll: {backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border, flexGrow: 0},
-  dateRow: {flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm},
-  datePill: {backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 5},
-  datePillActive: {backgroundColor: colors.primarySurface, borderColor: colors.primary},
-  datePillText: {...typography.captionMedium, fontSize: 12, color: colors.textSecondary},
-  datePillTextActive: {color: colors.primary},
-  summaryBanner: {backgroundColor: colors.primarySurface, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm},
-  summaryBannerText: {...typography.labelSemibold, fontSize: 13, color: colors.primary},
-  plainBanner: {backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm},
-  plainBannerText: {...typography.label, fontSize: 13, color: colors.textSecondary},
   body: {padding: spacing.lg, gap: spacing.sm, paddingBottom: spacing.xxxl},
   dot: {width: 10, height: 10, borderRadius: 5, marginTop: 4},
   allRow: {flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.md},
@@ -311,8 +278,6 @@ const styles = StyleSheet.create({
   allTime: {...typography.caption, fontSize: 11, color: colors.textMuted, marginTop: 2},
   statusPill: {borderRadius: radius.sm, paddingHorizontal: 7, paddingVertical: 2},
   statusPillText: {...typography.captionSemibold, fontSize: 10},
-  loadMore: {alignItems: 'center', paddingVertical: spacing.md},
-  loadMoreText: {...typography.labelSemibold, fontSize: 14, color: colors.primary},
   activeCard: {
     backgroundColor: colors.surface,
     borderWidth: 2,
@@ -333,15 +298,9 @@ const styles = StyleSheet.create({
   activeMetaLabel: {...typography.caption, fontSize: 11, color: colors.textSecondary},
   activeMetaValue: {...typography.captionMedium, fontSize: 12, color: colors.textPrimary, marginTop: 1},
   activeEarningsNote: {...typography.caption, fontSize: 11, color: colors.textSecondary},
-  sectionLabel: {...typography.captionSemibold, fontSize: 13, color: colors.textSecondary, letterSpacing: 0.5, textTransform: 'uppercase', marginTop: spacing.sm},
-  recentRow: {flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, paddingHorizontal: spacing.md, paddingVertical: spacing.md},
-  recentOrderId: {...typography.labelSemibold, fontSize: 13, color: colors.textPrimary},
-  recentStatus: {...typography.caption, fontSize: 12, color: colors.textSecondary, marginTop: 2},
-  recentDot: {width: 8, height: 8, borderRadius: 4, backgroundColor: colors.warning},
   completedRow: {flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, paddingHorizontal: spacing.md, paddingVertical: spacing.md},
   completedAmount: {...typography.bodyBold, fontSize: 13, color: colors.primary},
   completedTime: {...typography.caption, fontSize: 12, color: colors.textSecondary},
-  completedDuration: {...typography.caption, fontSize: 11, color: colors.textMuted},
   completedFooter: {flexDirection: 'row', backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border, paddingVertical: spacing.md, marginTop: spacing.sm},
   completedFooterCol: {flex: 1, alignItems: 'center'},
   completedFooterDivider: {width: 1, backgroundColor: colors.border},
@@ -353,10 +312,7 @@ const styles = StyleSheet.create({
   cancelledPillText: {...typography.captionSemibold, fontSize: 10, color: '#6B7280'},
   cancelRoute: {...typography.caption, fontSize: 12, color: colors.textSecondary, marginTop: 4},
   cancelTime: {...typography.caption, fontSize: 11, color: colors.textMuted, marginTop: 4},
-  cancelBottomRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.sm},
-  cancelReason: {...typography.caption, fontSize: 12, color: colors.textSecondary},
-  cancelAmount: {...typography.labelSemibold, fontSize: 12, color: colors.textMuted},
-  cancelAmountGreen: {color: colors.primary},
+  cancelReason: {...typography.caption, fontSize: 12, color: colors.textSecondary, marginTop: spacing.sm},
   infoBanner: {flexDirection: 'row', gap: spacing.sm, backgroundColor: colors.primarySurface, borderWidth: 1, borderColor: colors.primary, borderRadius: radius.lg, padding: spacing.md, marginTop: spacing.xs},
   infoBannerText: {...typography.label, fontSize: 13, color: colors.primaryDark, flex: 1},
 });

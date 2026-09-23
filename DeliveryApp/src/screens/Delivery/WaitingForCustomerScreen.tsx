@@ -5,10 +5,11 @@ import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WaitingForCustomer'>;
 
-const START_SECONDS = 4 * 60 + 32;
+const START_SECONDS = 5 * 60;
 const RING_SIZE = 168;
 const STROKE_WIDTH = 8;
 const RADIUS = (RING_SIZE - STROKE_WIDTH) / 2;
@@ -22,7 +23,21 @@ function formatTime(totalSeconds: number) {
 
 export function WaitingForCustomerScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(START_SECONDS);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
 
   useEffect(() => {
     if (secondsLeft <= 0) {return;}
@@ -31,6 +46,9 @@ export function WaitingForCustomerScreen({route, navigation}: Props) {
   }, [secondsLeft]);
 
   const progress = 1 - secondsLeft / START_SECONDS;
+  const customerName = order?.address.contactName ?? 'Customer';
+  const addressLine = order?.address.line1;
+  const addressSubtitle = order ? [order.address.line2, order.address.city].filter(Boolean).join(', ') : null;
 
   return (
     <Screen edges={['top', 'bottom']}>
@@ -60,36 +78,27 @@ export function WaitingForCustomerScreen({route, navigation}: Props) {
         </View>
         <View style={styles.tagsRow}>
           <View style={styles.tag}>
-            <Text style={styles.tagText}>#{orderId}</Text>
+            <Text style={styles.tagText}>#{order?.orderNumber ?? orderId}</Text>
           </View>
           <View style={styles.tag}>
-            <Text style={styles.tagTextMuted}>Priya Mehta</Text>
+            <Text style={styles.tagTextMuted}>{customerName}</Text>
           </View>
         </View>
       </View>
 
       <ScrollView style={styles.flex} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-        <View style={styles.locationCard}>
-          <Text style={styles.cardLabel}>LOCATION</Text>
-          <View style={styles.locationRow}>
-            <Icon name="map-pin" size={14} color={colors.textSecondary} />
-            <View>
-              <Text style={styles.locationTitle}>Apt 4B, Tower C, Prestige Lakeside</Text>
-              <Text style={styles.locationSubtitle}>HSR Layout Sector 2</Text>
+        {!!addressLine && (
+          <View style={styles.locationCard}>
+            <Text style={styles.cardLabel}>LOCATION</Text>
+            <View style={styles.locationRow}>
+              <Icon name="map-pin" size={14} color={colors.textSecondary} />
+              <View>
+                <Text style={styles.locationTitle}>{addressLine}</Text>
+                {!!addressSubtitle && <Text style={styles.locationSubtitle}>{addressSubtitle}</Text>}
+              </View>
             </View>
           </View>
-          <View style={styles.locationTagsRow}>
-            <View style={styles.statusTag}>
-              <Text style={styles.statusTagText}>Gate open</Text>
-            </View>
-            <View style={styles.statusTag}>
-              <Text style={styles.statusTagText}>Lobby clear</Text>
-            </View>
-            <View style={styles.neutralTag}>
-              <Text style={styles.neutralTagText}>Arrived: 3:08 PM</Text>
-            </View>
-          </View>
-        </View>
+        )}
 
         <Text style={styles.sectionLabel}>Actions while waiting</Text>
         <View style={styles.actionsRow}>
@@ -155,11 +164,6 @@ const styles = StyleSheet.create({
   locationRow: {flexDirection: 'row', gap: spacing.sm},
   locationTitle: {...typography.labelSemibold, fontSize: 13, color: colors.textPrimary},
   locationSubtitle: {...typography.caption, fontSize: 12, color: colors.textSecondary, marginTop: 1},
-  locationTagsRow: {flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm},
-  statusTag: {backgroundColor: colors.primarySurface, borderRadius: 4, paddingHorizontal: spacing.sm, paddingVertical: 3},
-  statusTagText: {...typography.captionMedium, fontSize: 12, color: colors.primary},
-  neutralTag: {backgroundColor: colors.background, borderRadius: 4, paddingHorizontal: spacing.sm, paddingVertical: 3},
-  neutralTagText: {...typography.captionMedium, fontSize: 12, color: colors.textSecondary},
   sectionLabel: {...typography.bodySemibold, fontSize: 13, color: colors.textPrimary},
   actionsRow: {flexDirection: 'row', gap: spacing.sm},
   actionButton: {flex: 1, alignItems: 'center', gap: 6, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingVertical: spacing.md},

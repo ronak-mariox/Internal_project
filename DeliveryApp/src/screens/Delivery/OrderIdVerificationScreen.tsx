@@ -4,18 +4,38 @@ import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'OrderIdVerification'>;
 
 export function OrderIdVerificationScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
   const [manualId, setManualId] = useState(orderId);
   const [verified, setVerified] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) {
+          setOrder(o);
+          setManualId(o.orderNumber);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
 
   useEffect(() => {
     const timer = setTimeout(() => setVerified(true), 1600);
     return () => clearTimeout(timer);
   }, []);
+
+  const itemCount = order?.items.reduce((sum, item) => sum + item.quantity, 0) ?? 0;
 
   return (
     <Screen edges={['top', 'bottom']}>
@@ -51,9 +71,6 @@ export function OrderIdVerificationScreen({route, navigation}: Props) {
             <Text style={styles.verifyButtonText}>Verify</Text>
           </TouchableOpacity>
         </View>
-        <TouchableOpacity activeOpacity={0.7}>
-          <Text style={styles.qrLink}>QR Code not available?</Text>
-        </TouchableOpacity>
 
         {verified && (
           <View style={styles.verifiedCard}>
@@ -65,15 +82,15 @@ export function OrderIdVerificationScreen({route, navigation}: Props) {
             </View>
             <View style={styles.verifiedRow}>
               <Text style={styles.verifiedLabel}>Order ID</Text>
-              <Text style={styles.verifiedValue}>#{orderId}</Text>
+              <Text style={styles.verifiedValue}>#{order?.orderNumber ?? orderId}</Text>
             </View>
             <View style={styles.verifiedRow}>
               <Text style={styles.verifiedLabel}>Store</Text>
-              <Text style={styles.verifiedValue}>Swiggy Instamart</Text>
+              <Text style={styles.verifiedValue}>{order?.pickup.name ?? '—'}</Text>
             </View>
             <View style={styles.verifiedRow}>
               <Text style={styles.verifiedLabel}>Items</Text>
-              <Text style={styles.verifiedValue}>3</Text>
+              <Text style={styles.verifiedValue}>{itemCount}</Text>
             </View>
           </View>
         )}
@@ -119,7 +136,6 @@ const styles = StyleSheet.create({
   },
   verifyButton: {backgroundColor: colors.primary, borderRadius: radius.sm, paddingHorizontal: spacing.xl, alignItems: 'center', justifyContent: 'center'},
   verifyButtonText: {...typography.bodySemibold, fontSize: 14, color: colors.white},
-  qrLink: {...typography.label, color: colors.primary, textDecorationLine: 'underline'},
   verifiedCard: {backgroundColor: colors.successSurface, borderWidth: 1, borderColor: '#A7F3D0', borderRadius: radius.lg, padding: spacing.lg, gap: spacing.sm},
   verifiedHeader: {flexDirection: 'row', alignItems: 'center', gap: spacing.sm},
   verifiedIcon: {width: 24, height: 24, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center'},

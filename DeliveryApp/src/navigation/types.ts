@@ -1,12 +1,14 @@
+import {DeliveryIssueType, DeliveryOrder} from '../context/OrdersContext';
+
 export type RootStackParamList = {
   Splash: undefined;
   Welcome: undefined;
   Login: undefined;
   RegistrationLanding: undefined;
   EnterMobileNumber: undefined;
-  VerifyRegistrationOtp: {mobile: string};
-  IncorrectOtp: {mobile: string; reason?: string};
-  ResendOtpMethod: {mobile: string};
+  VerifyRegistrationOtp: {mobile: string; flow?: 'login' | 'register'};
+  IncorrectOtp: {mobile: string; reason?: string; flow?: 'login' | 'register'};
+  ResendOtpMethod: {mobile: string; flow?: 'login' | 'register'};
   AccountNotFound: {mobile: string};
   PersonalInformation: {mobile: string};
   ProfilePhoto: undefined;
@@ -98,13 +100,13 @@ export type RootStackParamList = {
   CannotComplete: {orderId: string};
   ReportIssue: {orderId: string};
   SelectIssueReason: {orderId: string};
-  UploadEvidence: {orderId: string};
-  IssueSupportContact: {orderId: string};
-  IssueResolution: {orderId: string};
+  UploadEvidence: {orderId: string; issueType: DeliveryIssueType};
+  IssueSupportContact: {orderId: string; order?: DeliveryOrder};
+  IssueResolution: {orderId: string; order?: DeliveryOrder};
   RetryDelivery: {orderId: string};
   ReturnOrder: {orderId: string};
   OrderReassigned: {orderId: string};
-  DeliveryFailed: {orderId: string};
+  DeliveryFailed: {orderId: string; order?: DeliveryOrder};
   DeliveryClosed: {orderId: string};
   CustomerDeliveryDetails: {orderId: string};
   OtpEntry: {orderId: string};

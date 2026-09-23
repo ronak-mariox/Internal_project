@@ -12,18 +12,43 @@ export function findVariant(product: Pick<ProductDoc, 'variants'>, variantId: st
   return product.variants.find((v) => v.id === variantId);
 }
 
+export interface AppliedOffer {
+  id: string;
+  discountType: 'percentage' | 'flat';
+  discountValue: number;
+}
+
 export interface PricedLine {
   product: ProductDoc;
   variant: ProductVariant;
   quantity: number;
   subtotal: number;
   tax: number;
+  offerId?: string;
+  originalSubtotal?: number;
 }
 
-export function priceLine(product: ProductDoc, variant: ProductVariant, quantity: number): PricedLine {
-  const subtotal = round2(variant.price * quantity);
+export function priceLine(
+  product: ProductDoc,
+  variant: ProductVariant,
+  quantity: number,
+  appliedOffer?: AppliedOffer,
+): PricedLine {
+  const originalSubtotal = round2(variant.price * quantity);
+  let subtotal = originalSubtotal;
+  let offerId: string | undefined;
+
+  if (appliedOffer) {
+    const discountedUnitPrice =
+      appliedOffer.discountType === 'percentage'
+        ? variant.price * (1 - appliedOffer.discountValue / 100)
+        : variant.price - appliedOffer.discountValue;
+    subtotal = round2(Math.max(discountedUnitPrice, 0) * quantity);
+    offerId = appliedOffer.id;
+  }
+
   const tax = round2((subtotal * (product.taxRate || 0)) / 100);
-  return { product, variant, quantity, subtotal, tax };
+  return { product, variant, quantity, subtotal, tax, offerId, originalSubtotal: offerId ? originalSubtotal : undefined };
 }
 
 export function round2(n: number): number {

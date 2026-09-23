@@ -4,18 +4,27 @@ import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, CountdownRing, Icon, IconBackButton} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'OrderRequestDetails'>;
 
-const ITEMS = [
-  {name: 'Amul Full Cream Milk 1L', qty: 2, price: '₹60'},
-  {name: 'Britannia Whole Wheat Bread', qty: 1, price: '₹42'},
-  {name: 'Tropicana Orange Juice 1L', qty: 1, price: '₹120'},
-];
-
 export function OrderRequestDetailsScreen({route, navigation}: Props) {
   const {orderId, secondsLeft: initialSeconds} = route.params;
+  const {getOrder} = useOrders();
   const [secondsLeft, setSecondsLeft] = useState(initialSeconds ?? 18);
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
 
   useEffect(() => {
     if (secondsLeft <= 0) {
@@ -26,13 +35,19 @@ export function OrderRequestDetailsScreen({route, navigation}: Props) {
     return () => clearTimeout(timer);
   }, [secondsLeft, navigation, orderId]);
 
+  const itemCount = order?.items.reduce((sum, item) => sum + item.quantity, 0) ?? 0;
+  const earnings = order?.driverEarnings;
+  const total = earnings?.total ?? order?.pricing.deliveryFee ?? 0;
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <IconBackButton onPress={() => navigation.goBack()} />
         <View style={styles.headerText}>
-          <Text style={styles.headerTitle}>Order #{orderId}</Text>
-          <Text style={styles.headerSubtitle}>Swiggy Instamart · 3 items</Text>
+          <Text style={styles.headerTitle}>Order #{order?.orderNumber ?? orderId}</Text>
+          <Text style={styles.headerSubtitle}>
+            {order?.pickup.name ?? 'Store'} · {itemCount || '—'} items
+          </Text>
         </View>
         <CountdownRing seconds={secondsLeft} color={colors.warning} size={48} />
       </View>
@@ -41,14 +56,15 @@ export function OrderRequestDetailsScreen({route, navigation}: Props) {
         <View style={styles.earningsCard}>
           <View>
             <Text style={styles.earningsLabel}>ESTIMATED EARNINGS</Text>
-            <Text style={styles.earningsValue}>₹78</Text>
-            <Text style={styles.earningsBreakdown}>Base ₹40 + Distance ₹24 + Bonus ₹14</Text>
+            <Text style={styles.earningsValue}>₹{total}</Text>
+            <Text style={styles.earningsBreakdown}>
+              {earnings
+                ? `Base ₹${earnings.base} + Distance ₹${earnings.distance} + Bonus ₹${earnings.onTimeBonus + earnings.incentiveBonus}`
+                : `Delivery fee ₹${order?.pricing.deliveryFee ?? 0}`}
+            </Text>
           </View>
           <View style={styles.earningsRight}>
-            <Text style={styles.earningsSubLabel}>3.8 km total</Text>
-            <Text style={styles.earningsPerKm}>
-              ₹20.5<Text style={styles.earningsPerKmUnit}>/km</Text>
-            </Text>
+            <Text style={styles.earningsSubLabel}>{order?.address.city ?? ''}</Text>
           </View>
         </View>
 
@@ -65,43 +81,43 @@ export function OrderRequestDetailsScreen({route, navigation}: Props) {
               </View>
             </View>
             <View style={styles.routeText}>
-              <Text style={styles.routeTitle}>Swiggy Instamart</Text>
-              <Text style={styles.routeSubtitle}>100 Feet Road, Koramangala 6th Block</Text>
-              <Text style={styles.routeMetaGreen}>
-                1.2 km from you <Text style={styles.routeMetaMuted}>· ~8 min</Text>
-              </Text>
+              <Text style={styles.routeTitle}>{order?.pickup.name ?? 'Store'}</Text>
+              <Text style={styles.routeSubtitle}>{order?.pickup.address ?? 'Pickup address'}</Text>
               <View style={styles.routeSpacer} />
               <Text style={styles.routeTitle}>Customer Drop-off</Text>
-              <Text style={styles.routeSubtitle}>Flat 302, Sunrise Apts, HSR Layout Sector 2</Text>
-              <Text style={styles.routeMetaRed}>
-                2.6 km from pickup <Text style={styles.routeMetaMuted}>· ~14 min</Text>
+              <Text style={styles.routeSubtitle}>
+                {order ? `${order.address.line1}, ${order.address.city}` : 'Delivery address'}
               </Text>
+              {order?.address.landmark ? <Text style={styles.routeMetaMuted}>Near {order.address.landmark}</Text> : null}
             </View>
           </View>
         </View>
 
         <View style={styles.card}>
           <Text style={styles.cardLabel}>ORDER CONTENTS</Text>
-          {ITEMS.map((item, index) => (
-            <View key={item.name} style={[styles.itemRow, index > 0 && styles.itemRowBorder]}>
+          {(order?.items ?? []).map((item, index) => (
+            <View key={`${item.productId}-${item.variantId}`} style={[styles.itemRow, index > 0 && styles.itemRowBorder]}>
               <View style={styles.itemDot} />
               <Text style={styles.itemName} numberOfLines={1}>
                 {item.name}
               </Text>
-              <Text style={styles.itemQty}>×{item.qty}</Text>
-              <Text style={styles.itemPrice}>{item.price}</Text>
+              <Text style={styles.itemQty}>×{item.quantity}</Text>
+              <Text style={styles.itemPrice}>₹{item.subtotal}</Text>
             </View>
           ))}
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Order Value</Text>
-            <Text style={styles.totalValue}>₹222</Text>
+            <Text style={styles.totalValue}>₹{order?.pricing.grandTotal ?? 0}</Text>
           </View>
         </View>
 
         <View style={styles.paymentBanner}>
           <Icon name="credit-card" size={16} color={colors.primary} />
           <Text style={styles.paymentText}>
-            Payment: <Text style={styles.paymentTextStrong}>Pre-paid · No cash collection required</Text>
+            Payment:{' '}
+            <Text style={styles.paymentTextStrong}>
+              Cash on Delivery · Collect ₹{order?.pricing.grandTotal ?? 0} from customer
+            </Text>
           </Text>
         </View>
       </ScrollView>
@@ -143,8 +159,6 @@ const styles = StyleSheet.create({
   earningsBreakdown: {...typography.caption, color: 'rgba(255,255,255,0.7)', marginTop: 2},
   earningsRight: {alignItems: 'flex-end'},
   earningsSubLabel: {...typography.caption, fontSize: 11, color: 'rgba(255,255,255,0.7)'},
-  earningsPerKm: {...typography.h4, fontSize: 20, color: colors.white, marginTop: spacing.xs},
-  earningsPerKmUnit: {...typography.caption, color: 'rgba(255,255,255,0.7)'},
   card: {backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.xl, padding: spacing.lg},
   cardLabel: {...typography.overline, fontSize: 12, color: colors.textMuted, letterSpacing: 0.5, marginBottom: spacing.sm},
   routeRow: {flexDirection: 'row', gap: spacing.md},
@@ -155,9 +169,7 @@ const styles = StyleSheet.create({
   routeText: {flex: 1},
   routeTitle: {...typography.bodyBold, fontSize: 14, color: colors.textPrimary},
   routeSubtitle: {...typography.caption, color: colors.textSecondary, marginTop: 1},
-  routeMetaGreen: {...typography.captionSemibold, fontSize: 11, color: colors.primary, marginTop: 2},
-  routeMetaRed: {...typography.captionSemibold, fontSize: 11, color: colors.danger, marginTop: 2},
-  routeMetaMuted: {...typography.caption, fontSize: 11, color: colors.textMuted, fontWeight: '400'},
+  routeMetaMuted: {...typography.caption, fontSize: 11, color: colors.textMuted, marginTop: 2},
   routeSpacer: {height: spacing.lg},
   itemRow: {flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm},
   itemRowBorder: {borderTopWidth: 1, borderTopColor: '#F3F4F6'},

@@ -6,13 +6,13 @@ import type { AuthStackParamList } from '../../navigation/types';
 import { Button, FormSectionCard, Input, NavHeader, ProgressSteps, ScreenContainer } from '../../components';
 import { Icon } from '../../icons/Icon';
 import { useRegistration, type OwnerInfoData } from '../../context/RegistrationContext';
-import { api, getApiErrorMessage } from '../../services/api';
+import { api, getApiErrorMessage, getFieldErrors } from '../../services/api';
+import { isAdult, isRequired, isValidPAN, type FormErrors } from '../../utils/validators';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'OwnerInfo'>;
 
-const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
-const EIGHTEEN_YEARS_MS = 18 * 365.25 * 24 * 60 * 60 * 1000;
+type Errors = FormErrors<'fullName' | 'dob' | 'pan'>;
 
 function toIsoDate(date: Date): string {
   const year = date.getFullYear();
@@ -42,12 +42,15 @@ export function OwnerInfoScreen({ navigation }: Props) {
   const [form, setForm] = useState<OwnerInfoData>(
     data.ownerInfo ?? { fullName: '', mobile: '', email: '', dob: '', pan: '' },
   );
-  const [error, setError] = useState<string | undefined>();
+  const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   function set<K extends keyof OwnerInfoData>(key: K, value: OwnerInfoData[K]) {
     setForm(prev => ({ ...prev, [key]: value }));
+    if (key in errors) {
+      setErrors(prev => ({ ...prev, [key]: undefined }));
+    }
   }
 
   function handleDateChange(event: DateTimePickerEvent, selectedDate?: Date) {
@@ -62,20 +65,15 @@ export function OwnerInfoScreen({ navigation }: Props) {
   }
 
   async function handleContinue() {
-    if (!form.fullName || !form.dob) {
-      setError('Please fill in all required fields');
-      return;
-    }
-    if (!PAN_PATTERN.test(form.pan)) {
-      setError('Invalid PAN format. Format: AAAAA9999A (e.g. ABCDE1234F)');
-      return;
-    }
-    const dobDate = new Date(`${form.dob}T00:00:00`);
-    if (Date.now() - dobDate.getTime() < EIGHTEEN_YEARS_MS) {
-      setError('You must be at least 18 years old');
-      return;
-    }
-    setError(undefined);
+    const nextErrors: Errors = {};
+    if (!isRequired(form.fullName)) nextErrors.fullName = 'Enter the owner full name';
+    if (!isRequired(form.dob)) nextErrors.dob = 'Select the date of birth';
+    else if (!isAdult(form.dob)) nextErrors.dob = 'You must be at least 18 years old';
+    if (!isValidPAN(form.pan)) nextErrors.pan = 'Invalid PAN format. Format: AAAAA9999A (e.g. ABCDE1234F)';
+
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+
     setSaving(true);
     try {
       await api.patch('/vendor/registration/owner-info', {
@@ -88,13 +86,17 @@ export function OwnerInfoScreen({ navigation }: Props) {
       updateOwnerInfo(form);
       navigation.navigate('StoreInfo');
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Could not save your details. Please try again.'));
+      const fieldErrors = getFieldErrors(err);
+      if (Object.keys(fieldErrors).length > 0) {
+        setErrors(fieldErrors as Errors);
+      } else {
+        setErrors({ form: getApiErrorMessage(err, 'Could not save your details. Please try again.') });
+      }
     } finally {
       setSaving(false);
     }
   }
 
-  const panError = error && !PAN_PATTERN.test(form.pan) ? error : undefined;
   const maxDob = new Date();
   maxDob.setFullYear(maxDob.getFullYear() - 18);
 
@@ -118,6 +120,7 @@ export function OwnerInfoScreen({ navigation }: Props) {
             placeholder="Priya Sharma"
             autoCapitalize="words"
             helperText="As per government-issued ID"
+            error={errors.fullName}
           />
           <Input
             label="Mobile Number"
@@ -142,13 +145,20 @@ export function OwnerInfoScreen({ navigation }: Props) {
               <Text style={styles.dobLabel}>Date of Birth</Text>
               <Text style={styles.required}> *</Text>
             </View>
-            <Pressable style={styles.dobPressable} onPress={() => setShowDatePicker(true)}>
+            <Pressable
+              style={[styles.dobPressable, errors.dob && styles.dobPressableError]}
+              onPress={() => setShowDatePicker(true)}
+            >
               <Icon name="calendar" size={16} color={colors.textSecondary} />
               <Text style={[styles.dobValue, !form.dob && styles.dobPlaceholder]}>
                 {form.dob ? formatDisplayDate(form.dob) : 'Select your date of birth'}
               </Text>
             </Pressable>
-            <Text style={styles.dobHelperText}>Must be 18 years or older</Text>
+            {errors.dob ? (
+              <Text style={styles.errorText}>{errors.dob}</Text>
+            ) : (
+              <Text style={styles.dobHelperText}>Must be 18 years or older</Text>
+            )}
           </View>
           {showDatePicker ? (
             <DateTimePicker
@@ -170,11 +180,11 @@ export function OwnerInfoScreen({ navigation }: Props) {
             onChangeText={text => set('pan', text.toUpperCase().slice(0, 10))}
             placeholder="ABCDE1234F"
             autoCapitalize="characters"
-            error={panError}
+            error={errors.pan}
           />
         </FormSectionCard>
 
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {errors.form ? <Text style={styles.errorText}>{errors.form}</Text> : null}
 
         <View style={styles.footer}>
           <Button label="Save & Continue" onPress={handleContinue} loading={saving} />
@@ -240,6 +250,10 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     paddingHorizontal: spacing.lg,
     backgroundColor: colors.white,
+  },
+  dobPressableError: {
+    borderColor: colors.error,
+    backgroundColor: colors.errorSurface,
   },
   dobValue: {
     ...typography.body,

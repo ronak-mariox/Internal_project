@@ -1,21 +1,43 @@
-import React, {useState} from 'react';
-import {ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import React, {useEffect, useState} from 'react';
+import {Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
+import {getApiErrorMessage} from '../../services/api';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RoadBlockage'>;
 
-const ROUTES = [
-  {id: 'alternate', title: 'Try alternate route', subtitle: '1.4 km longer · +9 min'},
-  {id: 'wait', title: 'Wait for road to clear', subtitle: 'Estimated 15 min'},
-];
-
 export function RoadBlockageScreen({route, navigation}: Props) {
   const {orderId} = route.params;
-  const [selected, setSelected] = useState('alternate');
-  const goHome = () => navigation.reset({index: 0, routes: [{name: 'Home'}]});
+  const {getOrder, reportIssue} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId).then((o) => { if (!cancelled) setOrder(o); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [orderId, getOrder]);
+
+  const addressLine = [order?.address.line1, order?.address.line2].filter(Boolean).join(', ');
+
+  const handleReport = async () => {
+    setSubmitting(true);
+    try {
+      await reportIssue(orderId, {type: 'road_blockage'});
+      Alert.alert(
+        'Reported',
+        'This order has been unassigned from you and will be reassigned to another delivery partner.',
+        [{text: 'OK', onPress: () => navigation.reset({index: 0, routes: [{name: 'Home'}]})}],
+      );
+    } catch (err) {
+      Alert.alert('Could Not Report', getApiErrorMessage(err, 'Please try again.'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <Screen edges={['top', 'bottom']}>
@@ -27,47 +49,31 @@ export function RoadBlockageScreen({route, navigation}: Props) {
 
       <ScrollView style={styles.flex} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <View style={styles.card}>
-          <Text style={styles.cardLabel}>CURRENT STATUS</Text>
+          <Text style={styles.cardLabel}>ORDER</Text>
           <View style={styles.row}>
             <Text style={styles.rowLabel}>Order</Text>
-            <Text style={styles.rowValue}>#{orderId}, HSR Layout</Text>
+            <Text style={styles.rowValue}>{`#${order?.orderNumber ?? orderId}`}</Text>
           </View>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Your location</Text>
-            <Text style={styles.rowValue}>0.8 km from destination</Text>
-          </View>
-          <View style={styles.issueRow}>
-            <Text style={styles.issueText}>Issue: Road closed — protest/construction</Text>
-          </View>
+          {!!addressLine && (
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Destination</Text>
+              <Text style={styles.rowValue}>{addressLine}</Text>
+            </View>
+          )}
         </View>
 
-        <Text style={styles.sectionLabel}>Route alternatives</Text>
-        <View style={styles.optionsList}>
-          {ROUTES.map(r => {
-            const isSelected = r.id === selected;
-            return (
-              <TouchableOpacity
-                key={r.id}
-                style={[styles.routeRow, isSelected && styles.routeRowSelected]}
-                activeOpacity={0.8}
-                onPress={() => setSelected(r.id)}>
-                <View style={[styles.radio, isSelected && styles.radioSelected]}>{isSelected && <View style={styles.radioDot} />}</View>
-                <View>
-                  <Text style={styles.routeTitle}>{r.title}</Text>
-                  <Text style={styles.routeSubtitle}>{r.subtitle}</Text>
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        <Text style={styles.fallbackLabel}>If you cannot reach the location</Text>
+        <Button label={submitting ? 'Reporting…' : 'Report Road Blockage'} disabled={submitting} onPress={handleReport} />
+        <Button
+          label="Escalate to Support"
+          variant="secondary"
+          disabled={submitting}
+          onPress={() => navigation.navigate('IssueSupportContact', {orderId, order: order ?? undefined})}
+        />
 
-        <Text style={styles.fallbackLabel}>If neither option works</Text>
-        <Button label="Escalate to Support" onPress={() => navigation.navigate('CannotComplete', {orderId})} />
-        <Button label="Request Reassignment" variant="secondary" onPress={goHome} />
-
-        <View style={styles.infoBanner}>
-          <Text style={styles.infoText}>
-            Delays due to road issues are recorded. Your <Text style={styles.infoBold}>on-time score will not be affected</Text>.
+        <View style={styles.noteBanner}>
+          <Text style={styles.noteText}>
+            Reporting a road blockage will <Text style={styles.noteBold}>unassign this order from you</Text> so it can be reassigned.
           </Text>
         </View>
       </ScrollView>
@@ -86,19 +92,8 @@ const styles = StyleSheet.create({
   row: {flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.xxs},
   rowLabel: {...typography.label, color: colors.textSecondary},
   rowValue: {...typography.labelSemibold, color: colors.textPrimary},
-  issueRow: {borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm, marginTop: spacing.xs},
-  issueText: {...typography.label, fontSize: 13, color: colors.danger},
-  sectionLabel: {...typography.bodySemibold, fontSize: 14, color: colors.textPrimary},
-  optionsList: {gap: spacing.sm},
-  routeRow: {flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.surface, borderWidth: 2, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.lg},
-  routeRowSelected: {borderColor: colors.primary},
-  radio: {width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: colors.border, alignItems: 'center', justifyContent: 'center'},
-  radioSelected: {borderColor: colors.primary},
-  radioDot: {width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary},
-  routeTitle: {...typography.bodyLgMedium, color: colors.textPrimary},
-  routeSubtitle: {...typography.label, color: colors.textSecondary, marginTop: 1},
   fallbackLabel: {...typography.label, color: colors.textSecondary, textAlign: 'center'},
-  infoBanner: {backgroundColor: colors.infoSurface, borderWidth: 1, borderColor: '#BFDBFE', borderRadius: radius.md, padding: spacing.md},
-  infoText: {...typography.label, fontSize: 13, color: '#1D4ED8'},
-  infoBold: {fontWeight: '700'},
+  noteBanner: {backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md},
+  noteText: {...typography.label, fontSize: 13, color: colors.textSecondary, textAlign: 'center'},
+  noteBold: {fontWeight: '700', color: colors.textPrimary},
 });

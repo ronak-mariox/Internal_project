@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { api } from '../services/api';
+import { pickAndUploadLogo, pickAndUploadCoverImage } from '../services/storeSetupUpload';
 
 export type VendorStats = {
   orders: number;
@@ -11,8 +12,17 @@ export type VendorInfo = {
   businessType: string;
   legalName: string;
   gstNumber: string;
+  gstBusinessName: string;
+  gstRegistrationDate: string;
   panNumber: string;
+  panHolderName: string;
+  panDob: string;
   registeredAddress: string;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  state: string;
+  pincode: string;
 };
 
 export type OwnerInfo = {
@@ -24,9 +34,16 @@ export type OwnerInfo = {
 
 export type StoreInfo = {
   category: string;
+  subCategory: string;
+  tags: string[];
   description: string;
   storeCode: string;
   onboardedLabel: string;
+  contactNumber: string;
+  minimumOrderValue: number | null;
+  avgPrepTime: number | null;
+  logoUrl: string;
+  coverImageUrl: string;
 };
 
 export type ProfileCore = {
@@ -47,6 +64,8 @@ export type Address = {
   line1: string;
   line2: string;
   isPrimary: boolean;
+  lat: number | null;
+  lng: number | null;
 };
 
 export type DocumentStatus = 'verified' | 'pending' | 'rejected';
@@ -57,6 +76,14 @@ export type ProfileDocument = {
   status: DocumentStatus;
   uploadedLabel: string;
   rejectionReason?: string;
+  url?: string;
+};
+
+export type AdditionalDocument = {
+  id: string;
+  name: string;
+  url: string;
+  uploadedLabel: string;
 };
 
 export type BankDetails = {
@@ -64,6 +91,20 @@ export type BankDetails = {
   accountNumber: string;
   ifsc: string;
   bankName: string;
+  branch: string;
+  accountType: string;
+  upiId: string;
+};
+
+export type BankDetailsRequestStatus = 'pending' | 'approved' | 'rejected' | null;
+
+export type Settlement = {
+  id: string;
+  orderNumber: string;
+  grossAmount: number;
+  commissionAmount: number;
+  netPayout: number;
+  settledAt: string;
 };
 
 export type NotificationPrefGroup = 'Orders' | 'Inventory' | 'Payments' | 'System';
@@ -106,6 +147,29 @@ interface StepReview {
   note?: string;
 }
 
+interface RawAdditionalDocument {
+  id: string;
+  name: string;
+  url: string;
+  uploadedAt: string;
+}
+
+interface RawPendingBankDetails {
+  data: {
+    accountHolderName: string;
+    accountNumber: string;
+    ifsc: string;
+    bankName?: string;
+    branch?: string;
+    accountType: string;
+    upiId?: string;
+  };
+  status: 'pending' | 'approved' | 'rejected';
+  submittedAt: string;
+  reviewNote?: string;
+  reviewedAt?: string;
+}
+
 interface RawVendor {
   phone: string;
   email?: string;
@@ -114,15 +178,59 @@ interface RawVendor {
   kycStatus: string;
   referenceId?: string;
   businessType?: string;
-  businessInfo?: { legalName?: string; addressLine1?: string; addressLine2?: string; city?: string; state?: string; pincode?: string };
-  ownerInfo?: { fullName?: string; mobile?: string; email?: string; dob?: string };
-  storeInfo?: { storeType?: string; contactNumber?: string };
-  gstDetails?: { registered?: boolean; gstin?: string; certificateUrl?: string };
-  panDetails?: { panNumber?: string; documentUrl?: string };
+  businessInfo?: {
+    legalName?: string;
+    displayName?: string;
+    category?: string;
+    addressLine1?: string;
+    addressLine2?: string;
+    city?: string;
+    state?: string;
+    pincode?: string;
+    country?: string;
+  };
+  ownerInfo?: { fullName?: string; mobile?: string; email?: string; dob?: string; pan?: string };
+  storeInfo?: {
+    storeName?: string;
+    storeAddress?: string;
+    landmark?: string;
+    contactNumber?: string;
+    storeType?: string;
+    operatingHours?: string;
+  };
+  gstDetails?: {
+    registered?: boolean;
+    gstin?: string;
+    businessName?: string;
+    registrationDate?: string;
+    category?: string;
+    certificateUrl?: string;
+  };
+  panDetails?: { panNumber?: string; holderName?: string; dob?: string; panType?: string; documentUrl?: string };
   businessProof?: { documentType?: string; frontUrl?: string };
-  bankDetails?: { accountHolderName?: string; accountNumber?: string; ifsc?: string; bankName?: string };
+  bankDetails?: {
+    accountHolderName?: string;
+    accountNumber?: string;
+    ifsc?: string;
+    bankName?: string;
+    branch?: string;
+    accountType?: string;
+    upiId?: string;
+  };
   stepReviews?: Partial<Record<string, StepReview>>;
-  storeProfile?: { storeName?: string; description?: string; primaryCategory?: string };
+  storeProfile?: {
+    storeName?: string;
+    description?: string;
+    primaryCategory?: string;
+    subCategory?: string;
+    tags?: string[];
+    minimumOrderValue?: number;
+    avgPrepTime?: number;
+  };
+  storeLogoUrl?: string;
+  storeCoverImageUrl?: string;
+  additionalDocuments?: RawAdditionalDocument[];
+  pendingBankDetails?: RawPendingBankDetails;
   createdAt: string;
 }
 
@@ -138,6 +246,17 @@ interface RawAddress {
   line1: string;
   line2?: string;
   isPrimary: boolean;
+  lat?: number;
+  lng?: number;
+}
+
+interface RawSettlement {
+  id: string;
+  orderNumber: string;
+  grossAmount: number;
+  commissionAmount: number;
+  netPayout: number;
+  settledAt: string;
 }
 
 function initialsOf(name?: string): string {
@@ -175,20 +294,36 @@ function toProfileCore(vendor: RawVendor, stats: RawStats): ProfileCore {
       businessType: vendor.businessType ?? '',
       legalName: vendor.businessInfo?.legalName ?? '',
       gstNumber: vendor.gstDetails?.gstin ?? '',
+      gstBusinessName: vendor.gstDetails?.businessName ?? '',
+      gstRegistrationDate: vendor.gstDetails?.registrationDate ?? '',
       panNumber: vendor.panDetails?.panNumber ?? '',
+      panHolderName: vendor.panDetails?.holderName ?? '',
+      panDob: vendor.panDetails?.dob ?? '',
       registeredAddress: formatAddress(vendor.businessInfo),
+      addressLine1: vendor.businessInfo?.addressLine1 ?? '',
+      addressLine2: vendor.businessInfo?.addressLine2 ?? '',
+      city: vendor.businessInfo?.city ?? '',
+      state: vendor.businessInfo?.state ?? '',
+      pincode: vendor.businessInfo?.pincode ?? '',
     },
     owner: {
       name: vendor.ownerInfo?.fullName || vendor.fullName || '',
-      phone: vendor.storeInfo?.contactNumber || vendor.ownerInfo?.mobile || vendor.phone,
+      phone: vendor.ownerInfo?.mobile || vendor.phone,
       email: vendor.ownerInfo?.email || vendor.email || '',
       dateOfBirth: vendor.ownerInfo?.dob ?? '',
     },
     store: {
       category: vendor.storeProfile?.primaryCategory || vendor.storeInfo?.storeType || '',
+      subCategory: vendor.storeProfile?.subCategory ?? '',
+      tags: vendor.storeProfile?.tags ?? [],
       description: vendor.storeProfile?.description ?? '',
       storeCode: vendor.referenceId ?? '—',
       onboardedLabel: formatOnboardedLabel(vendor.createdAt),
+      contactNumber: vendor.storeInfo?.contactNumber ?? '',
+      minimumOrderValue: vendor.storeProfile?.minimumOrderValue ?? null,
+      avgPrepTime: vendor.storeProfile?.avgPrepTime ?? null,
+      logoUrl: vendor.storeLogoUrl ?? '',
+      coverImageUrl: vendor.storeCoverImageUrl ?? '',
     },
   };
 }
@@ -207,6 +342,7 @@ function toDocuments(vendor: RawVendor): ProfileDocument[] {
       status: stepStatus(vendor, 'panDetails'),
       uploadedLabel: 'Submitted during registration',
       rejectionReason: vendor.stepReviews?.panDetails?.note,
+      url: vendor.panDetails.documentUrl,
     });
   }
   if (vendor.gstDetails?.registered) {
@@ -216,6 +352,7 @@ function toDocuments(vendor: RawVendor): ProfileDocument[] {
       status: stepStatus(vendor, 'gstDetails'),
       uploadedLabel: 'Submitted during registration',
       rejectionReason: vendor.stepReviews?.gstDetails?.note,
+      url: vendor.gstDetails.certificateUrl,
     });
   }
   if (vendor.businessProof) {
@@ -225,6 +362,7 @@ function toDocuments(vendor: RawVendor): ProfileDocument[] {
       status: stepStatus(vendor, 'businessProof'),
       uploadedLabel: 'Submitted during registration',
       rejectionReason: vendor.stepReviews?.businessProof?.note,
+      url: vendor.businessProof.frontUrl,
     });
   }
   if (vendor.bankDetails) {
@@ -239,6 +377,10 @@ function toDocuments(vendor: RawVendor): ProfileDocument[] {
   return docs;
 }
 
+function toAdditionalDocument(raw: RawAdditionalDocument): AdditionalDocument {
+  return { id: raw.id, name: raw.name, url: raw.url, uploadedLabel: formatOnboardedLabel(raw.uploadedAt) };
+}
+
 function toBankDetails(vendor: RawVendor): BankDetails {
   const accountNumber = vendor.bankDetails?.accountNumber;
   return {
@@ -248,11 +390,33 @@ function toBankDetails(vendor: RawVendor): BankDetails {
     accountNumber: accountNumber ? `****${accountNumber.slice(-4)}` : '',
     ifsc: vendor.bankDetails?.ifsc ?? '',
     bankName: vendor.bankDetails?.bankName ?? '',
+    branch: vendor.bankDetails?.branch ?? '',
+    accountType: vendor.bankDetails?.accountType ?? '',
+    upiId: vendor.bankDetails?.upiId ?? '',
   };
 }
 
 function toAddress(raw: RawAddress): Address {
-  return { id: raw.id, label: raw.label, line1: raw.line1, line2: raw.line2 ?? '', isPrimary: raw.isPrimary };
+  return {
+    id: raw.id,
+    label: raw.label,
+    line1: raw.line1,
+    line2: raw.line2 ?? '',
+    isPrimary: raw.isPrimary,
+    lat: raw.lat ?? null,
+    lng: raw.lng ?? null,
+  };
+}
+
+function toSettlement(raw: RawSettlement): Settlement {
+  return {
+    id: raw.id,
+    orderNumber: raw.orderNumber,
+    grossAmount: raw.grossAmount,
+    commissionAmount: raw.commissionAmount,
+    netPayout: raw.netPayout,
+    settledAt: raw.settledAt,
+  };
 }
 
 const EMPTY_PROFILE: ProfileCore = {
@@ -262,12 +426,47 @@ const EMPTY_PROFILE: ProfileCore = {
   status: '',
   kycVerified: false,
   stats: { orders: 0, revenue: 0, rating: 0 },
-  vendor: { businessType: '', legalName: '', gstNumber: '', panNumber: '', registeredAddress: '' },
+  vendor: {
+    businessType: '',
+    legalName: '',
+    gstNumber: '',
+    gstBusinessName: '',
+    gstRegistrationDate: '',
+    panNumber: '',
+    panHolderName: '',
+    panDob: '',
+    registeredAddress: '',
+    addressLine1: '',
+    addressLine2: '',
+    city: '',
+    state: '',
+    pincode: '',
+  },
   owner: { name: '', phone: '', email: '', dateOfBirth: '' },
-  store: { category: '', description: '', storeCode: '—', onboardedLabel: '—' },
+  store: {
+    category: '',
+    subCategory: '',
+    tags: [],
+    description: '',
+    storeCode: '—',
+    onboardedLabel: '—',
+    contactNumber: '',
+    minimumOrderValue: null,
+    avgPrepTime: null,
+    logoUrl: '',
+    coverImageUrl: '',
+  },
 };
 
-const EMPTY_BANK: BankDetails = { accountHolderName: '', accountNumber: '', ifsc: '', bankName: '' };
+const EMPTY_BANK: BankDetails = {
+  accountHolderName: '',
+  accountNumber: '',
+  ifsc: '',
+  bankName: '',
+  branch: '',
+  accountType: '',
+  upiId: '',
+};
 
 type ProfileContextValue = {
   isLoading: boolean;
@@ -276,10 +475,12 @@ type ProfileContextValue = {
   updateOwnerInfo: (value: Partial<OwnerInfo>) => Promise<void>;
   updateStoreInfo: (value: Partial<StoreInfo>) => Promise<void>;
   updateProfileBasics: (value: { storeName?: string; avatarInitials?: string }) => Promise<void>;
+  updateStoreLogo: (source: 'camera' | 'gallery') => Promise<void>;
+  updateStoreCover: (source: 'camera' | 'gallery') => Promise<void>;
 
   addresses: Address[];
   getAddress: (addressId: string) => Address | undefined;
-  addAddress: (address: { label: string; line1: string; line2?: string }) => Promise<void>;
+  addAddress: (address: { label: string; line1: string; line2?: string; lat?: number; lng?: number }) => Promise<void>;
   updateAddress: (addressId: string, value: Partial<Address>) => Promise<void>;
   removeAddress: (addressId: string) => Promise<void>;
   setPrimaryAddress: (addressId: string) => Promise<void>;
@@ -288,8 +489,23 @@ type ProfileContextValue = {
   getDocument: (documentId: string) => ProfileDocument | undefined;
   replaceDocument: (documentId: string, url: string) => Promise<void>;
 
+  additionalDocuments: AdditionalDocument[];
+  addAdditionalDocument: (name: string, url: string) => Promise<void>;
+  removeAdditionalDocument: (documentId: string) => Promise<void>;
+
   bankDetails: BankDetails;
-  updateBankDetails: (value: Partial<BankDetails> & { accountNumber: string }) => Promise<void>;
+  bankDetailsRequestStatus: BankDetailsRequestStatus;
+  requestBankDetailsChange: (value: {
+    accountHolderName: string;
+    accountNumber: string;
+    ifsc: string;
+    bankName?: string;
+    branch?: string;
+    accountType: string;
+    upiId?: string;
+  }) => Promise<void>;
+
+  settlements: Settlement[];
 
   notificationPrefs: NotificationPref[];
   toggleNotificationPref: (key: string) => Promise<void>;
@@ -303,20 +519,23 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const [vendor, setVendor] = useState<RawVendor | null>(null);
   const [stats, setStats] = useState<RawStats>({ orders: 0, revenue: 0, rating: null });
   const [rawAddresses, setRawAddresses] = useState<RawAddress[]>([]);
+  const [rawSettlements, setRawSettlements] = useState<RawSettlement[]>([]);
   const [enabledPrefs, setEnabledPrefs] = useState<Record<string, boolean>>({});
   const [isLoading, setIsLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    const [vendorRes, statsRes, addressesRes, prefsRes] = await Promise.all([
+    const [vendorRes, statsRes, addressesRes, prefsRes, settlementsRes] = await Promise.all([
       api.get<RawVendor>('/vendor/me'),
       api.get<RawStats>('/vendor/me/stats'),
       api.get<RawAddress[]>('/vendor/me/addresses'),
       api.get<Record<string, boolean>>('/vendor/me/notification-prefs'),
+      api.get<RawSettlement[]>('/vendor/me/settlements'),
     ]);
     setVendor(vendorRes.data);
     setStats(statsRes.data);
     setRawAddresses(addressesRes.data);
     setEnabledPrefs(prefsRes.data);
+    setRawSettlements(settlementsRes.data);
   }, []);
 
   useEffect(() => {
@@ -327,8 +546,17 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
   const profile = useMemo(() => (vendor ? toProfileCore(vendor, stats) : EMPTY_PROFILE), [vendor, stats]);
   const documents = useMemo(() => (vendor ? toDocuments(vendor) : []), [vendor]);
+  const additionalDocuments = useMemo(
+    () => (vendor?.additionalDocuments ?? []).map(toAdditionalDocument),
+    [vendor],
+  );
   const bankDetails = useMemo(() => (vendor ? toBankDetails(vendor) : EMPTY_BANK), [vendor]);
+  const bankDetailsRequestStatus = useMemo<BankDetailsRequestStatus>(
+    () => vendor?.pendingBankDetails?.status ?? null,
+    [vendor],
+  );
   const addresses = useMemo(() => rawAddresses.map(toAddress), [rawAddresses]);
+  const settlements = useMemo(() => rawSettlements.map(toSettlement), [rawSettlements]);
   const notificationPrefs = useMemo(
     () =>
       NOTIFICATION_PREF_DEFS.map((def) => ({
@@ -339,26 +567,57 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   );
 
   const updateVendorInfo = useCallback(async (value: Partial<VendorInfo>) => {
+    const businessInfo: Record<string, unknown> = {};
+    if (value.legalName !== undefined) businessInfo.legalName = value.legalName;
+    if (value.addressLine1 !== undefined) businessInfo.addressLine1 = value.addressLine1;
+    if (value.addressLine2 !== undefined) businessInfo.addressLine2 = value.addressLine2;
+    if (value.city !== undefined) businessInfo.city = value.city;
+    if (value.state !== undefined) businessInfo.state = value.state;
+    if (value.pincode !== undefined) businessInfo.pincode = value.pincode;
+
+    const gstDetails: Record<string, unknown> = {};
+    if (value.gstNumber !== undefined) gstDetails.gstin = value.gstNumber;
+
+    const panDetails: Record<string, unknown> = {};
+    if (value.panNumber !== undefined) panDetails.panNumber = value.panNumber;
+
     const { data } = await api.patch<RawVendor>('/vendor/me', {
-      businessInfo: value.legalName !== undefined ? { legalName: value.legalName } : undefined,
+      ...(value.businessType !== undefined && { businessType: value.businessType }),
+      ...(Object.keys(businessInfo).length > 0 && { businessInfo }),
+      ...(Object.keys(gstDetails).length > 0 && { gstDetails }),
+      ...(Object.keys(panDetails).length > 0 && { panDetails }),
     });
     setVendor(data);
   }, []);
 
   const updateOwnerInfo = useCallback(async (value: Partial<OwnerInfo>) => {
-    // "phone" here is the store's public contact/WhatsApp number shown on
-    // EditProfileScreen — distinct from the owner's registered login mobile,
-    // so it maps onto storeInfo.contactNumber rather than ownerInfo.mobile.
+    const ownerInfo: Record<string, unknown> = {};
+    if (value.name !== undefined) ownerInfo.fullName = value.name;
+    if (value.phone !== undefined) ownerInfo.mobile = value.phone;
+    if (value.email !== undefined) ownerInfo.email = value.email;
+    if (value.dateOfBirth !== undefined) ownerInfo.dob = value.dateOfBirth;
+
     const { data } = await api.patch<RawVendor>('/vendor/me', {
-      ...(value.name !== undefined && { ownerInfo: { fullName: value.name } }),
-      ...(value.phone !== undefined && { storeInfo: { contactNumber: value.phone } }),
+      ...(Object.keys(ownerInfo).length > 0 && { ownerInfo }),
     });
     setVendor(data);
   }, []);
 
   const updateStoreInfo = useCallback(async (value: Partial<StoreInfo>) => {
+    const storeProfile: Record<string, unknown> = {};
+    if (value.category !== undefined) storeProfile.primaryCategory = value.category;
+    if (value.subCategory !== undefined) storeProfile.subCategory = value.subCategory;
+    if (value.tags !== undefined) storeProfile.tags = value.tags;
+    if (value.description !== undefined) storeProfile.description = value.description;
+    if (value.minimumOrderValue !== undefined) storeProfile.minimumOrderValue = value.minimumOrderValue;
+    if (value.avgPrepTime !== undefined) storeProfile.avgPrepTime = value.avgPrepTime;
+
+    const storeInfo: Record<string, unknown> = {};
+    if (value.contactNumber !== undefined) storeInfo.contactNumber = value.contactNumber;
+
     const { data } = await api.patch<RawVendor>('/vendor/me', {
-      storeProfile: { ...(value.description !== undefined && { description: value.description }) },
+      ...(Object.keys(storeProfile).length > 0 && { storeProfile }),
+      ...(Object.keys(storeInfo).length > 0 && { storeInfo }),
     });
     setVendor(data);
   }, []);
@@ -369,12 +628,27 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     setVendor(data);
   }, []);
 
+  const updateStoreLogo = useCallback(async (source: 'camera' | 'gallery') => {
+    const url = await pickAndUploadLogo(source);
+    if (!url) return;
+    setVendor((prev) => (prev ? { ...prev, storeLogoUrl: url } : prev));
+  }, []);
+
+  const updateStoreCover = useCallback(async (source: 'camera' | 'gallery') => {
+    const url = await pickAndUploadCoverImage(source);
+    if (!url) return;
+    setVendor((prev) => (prev ? { ...prev, storeCoverImageUrl: url } : prev));
+  }, []);
+
   const getAddress = useCallback((addressId: string) => addresses.find((a) => a.id === addressId), [addresses]);
 
-  const addAddress = useCallback(async (address: { label: string; line1: string; line2?: string }) => {
-    const { data } = await api.post<RawAddress[]>('/vendor/me/addresses', address);
-    setRawAddresses(data);
-  }, []);
+  const addAddress = useCallback(
+    async (address: { label: string; line1: string; line2?: string; lat?: number; lng?: number }) => {
+      const { data } = await api.post<RawAddress[]>('/vendor/me/addresses', address);
+      setRawAddresses(data);
+    },
+    [],
+  );
 
   const updateAddress = useCallback(async (addressId: string, value: Partial<Address>) => {
     const { data } = await api.patch<RawAddress[]>(`/vendor/me/addresses/${addressId}`, value);
@@ -398,10 +672,31 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     setVendor(data);
   }, []);
 
-  const updateBankDetails = useCallback(async (value: Partial<BankDetails> & { accountNumber: string }) => {
-    const { data } = await api.patch<RawVendor>('/vendor/me', { bankDetails: value });
-    setVendor(data);
+  const addAdditionalDocument = useCallback(async (name: string, url: string) => {
+    const { data } = await api.post<RawAdditionalDocument[]>('/vendor/me/documents/additional', { name, url });
+    setVendor((prev) => (prev ? { ...prev, additionalDocuments: data } : prev));
   }, []);
+
+  const removeAdditionalDocument = useCallback(async (documentId: string) => {
+    const { data } = await api.delete<RawAdditionalDocument[]>(`/vendor/me/documents/additional/${documentId}`);
+    setVendor((prev) => (prev ? { ...prev, additionalDocuments: data } : prev));
+  }, []);
+
+  const requestBankDetailsChange = useCallback(
+    async (value: {
+      accountHolderName: string;
+      accountNumber: string;
+      ifsc: string;
+      bankName?: string;
+      branch?: string;
+      accountType: string;
+      upiId?: string;
+    }) => {
+      const { data } = await api.post<RawPendingBankDetails>('/vendor/me/bank-details/request', value);
+      setVendor((prev) => (prev ? { ...prev, pendingBankDetails: data } : prev));
+    },
+    [],
+  );
 
   const toggleNotificationPref = useCallback(
     async (key: string) => {
@@ -426,6 +721,8 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       updateOwnerInfo,
       updateStoreInfo,
       updateProfileBasics,
+      updateStoreLogo,
+      updateStoreCover,
       addresses,
       getAddress,
       addAddress,
@@ -435,8 +732,13 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       documents,
       getDocument,
       replaceDocument,
+      additionalDocuments,
+      addAdditionalDocument,
+      removeAdditionalDocument,
       bankDetails,
-      updateBankDetails,
+      bankDetailsRequestStatus,
+      requestBankDetailsChange,
+      settlements,
       notificationPrefs,
       toggleNotificationPref,
       refresh,
@@ -448,6 +750,8 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       updateOwnerInfo,
       updateStoreInfo,
       updateProfileBasics,
+      updateStoreLogo,
+      updateStoreCover,
       addresses,
       getAddress,
       addAddress,
@@ -457,8 +761,13 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       documents,
       getDocument,
       replaceDocument,
+      additionalDocuments,
+      addAdditionalDocument,
+      removeAdditionalDocument,
       bankDetails,
-      updateBankDetails,
+      bankDetailsRequestStatus,
+      requestBankDetailsChange,
+      settlements,
       notificationPrefs,
       toggleNotificationPref,
       refresh,

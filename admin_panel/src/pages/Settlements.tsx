@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Wallet, CircleCheck, Bike, Store } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card, CardHeader } from '@/components/ui/Card';
@@ -9,52 +10,73 @@ import { Select } from '@/components/ui/Input';
 import { Tabs, type TabItem } from '@/components/ui/Tabs';
 import { Pagination } from '@/components/ui/Pagination';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { vendorSettlements, driverPayouts } from '@/data/settlements';
-import type { SettlementStatus } from '@/types';
+import { api, fetchAllPaginated } from '@/lib/api';
+import {
+  mapVendorSettlement,
+  mapDriverPayout,
+  errorMessage,
+  type ApiVendorSettlement,
+  type ApiDriverPayout,
+} from '@/lib/adminSettlements';
+import type { DriverPayoutSummary, VendorSettlementRecord } from '@/types';
 import { formatCurrency, formatDate } from '@/lib/format';
 
 const PAGE_SIZE = 14;
 
-const SETTLEMENT_STATUSES: SettlementStatus[] = ['paid', 'processing', 'pending', 'failed'];
+const DRIVER_STATUSES: DriverPayoutSummary['status'][] = ['pending', 'processing', 'paid'];
 
 type Tab = 'vendors' | 'drivers';
 
 export function Settlements() {
   const [tab, setTab] = useState<Tab>('vendors');
-  const [vendorStatus, setVendorStatus] = useState<SettlementStatus | 'all'>('all');
-  const [driverStatus, setDriverStatus] = useState<SettlementStatus | 'all'>('all');
+
+  const [vendorSettlements, setVendorSettlements] = useState<VendorSettlementRecord[]>([]);
+  const [driverPayouts, setDriverPayouts] = useState<DriverPayoutSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [driverStatus, setDriverStatus] = useState<DriverPayoutSummary['status'] | 'all'>('all');
   const [vendorPage, setVendorPage] = useState(1);
   const [driverPage, setDriverPage] = useState(1);
 
-  const vendorPendingTotal = useMemo(
-    () => vendorSettlements.filter((s) => s.status !== 'paid').reduce((sum, s) => sum + s.netPayout, 0),
-    [],
-  );
-  const vendorPaidTotal = useMemo(
-    () => vendorSettlements.filter((s) => s.status === 'paid').reduce((sum, s) => sum + s.netPayout, 0),
-    [],
-  );
-  const driverPendingTotal = useMemo(
-    () => driverPayouts.filter((p) => p.status !== 'paid').reduce((sum, p) => sum + p.totalPayout, 0),
-    [],
-  );
-  const driverPaidTotal = useMemo(
-    () => driverPayouts.filter((p) => p.status === 'paid').reduce((sum, p) => sum + p.totalPayout, 0),
-    [],
-  );
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const [vendorsRaw, driversRaw] = await Promise.all([
+          fetchAllPaginated<ApiVendorSettlement>('/admin/settlements/vendors'),
+          api.get<ApiDriverPayout[]>('/admin/settlements/drivers'),
+        ]);
+        if (cancelled) return;
+        setVendorSettlements(vendorsRaw.map(mapVendorSettlement));
+        setDriverPayouts(driversRaw.map(mapDriverPayout));
+      } catch (err) {
+        if (!cancelled) setLoadError(errorMessage(err, 'Failed to load settlements'));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  const filteredVendors = useMemo(
-    () => (vendorStatus === 'all' ? vendorSettlements : vendorSettlements.filter((s) => s.status === vendorStatus)),
-    [vendorStatus],
-  );
+  const vendorGrossTotal = useMemo(() => vendorSettlements.reduce((sum, s) => sum + s.grossAmount, 0), [vendorSettlements]);
+  const vendorNetTotal = useMemo(() => vendorSettlements.reduce((sum, s) => sum + s.netPayout, 0), [vendorSettlements]);
+  const driverPendingTotal = useMemo(() => driverPayouts.reduce((sum, p) => sum + p.pendingAmount, 0), [driverPayouts]);
+  const driverPaidTotal = useMemo(() => driverPayouts.reduce((sum, p) => sum + p.paidAmount, 0), [driverPayouts]);
+
   const filteredDrivers = useMemo(
     () => (driverStatus === 'all' ? driverPayouts : driverPayouts.filter((p) => p.status === driverStatus)),
-    [driverStatus],
+    [driverPayouts, driverStatus],
   );
 
-  const vendorPageCount = Math.max(1, Math.ceil(filteredVendors.length / PAGE_SIZE));
+  const vendorPageCount = Math.max(1, Math.ceil(vendorSettlements.length / PAGE_SIZE));
   const currentVendorPage = Math.min(vendorPage, vendorPageCount);
-  const vendorPageItems = filteredVendors.slice((currentVendorPage - 1) * PAGE_SIZE, currentVendorPage * PAGE_SIZE);
+  const vendorPageItems = vendorSettlements.slice((currentVendorPage - 1) * PAGE_SIZE, currentVendorPage * PAGE_SIZE);
 
   const driverPageCount = Math.max(1, Math.ceil(filteredDrivers.length / PAGE_SIZE));
   const currentDriverPage = Math.min(driverPage, driverPageCount);
@@ -71,16 +93,16 @@ export function Settlements() {
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatCard
-          label="Vendor payouts pending"
-          value={formatCurrency(vendorPendingTotal)}
-          icon={<Wallet size={18} />}
+          label="Vendor gross sales"
+          value={formatCurrency(vendorGrossTotal)}
+          icon={<Store size={18} />}
           iconColor="#F79009"
           iconSurface="var(--color-warning-surface)"
         />
         <StatCard
-          label="Vendor payouts paid"
-          value={formatCurrency(vendorPaidTotal)}
-          icon={<Store size={18} />}
+          label="Vendor net payouts"
+          value={formatCurrency(vendorNetTotal)}
+          icon={<Wallet size={18} />}
           iconColor="#1CA672"
           iconSurface="var(--color-brand-50)"
         />
@@ -103,36 +125,21 @@ export function Settlements() {
       <Card className="mt-6">
         <CardHeader
           title={tab === 'vendors' ? 'Vendor settlements' : 'Driver payouts'}
-          subtitle={tab === 'vendors' ? `${filteredVendors.length} settlements` : `${filteredDrivers.length} payouts`}
+          subtitle={tab === 'vendors' ? `${vendorSettlements.length} settlements` : `${filteredDrivers.length} payouts`}
         />
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-100 px-5 py-4">
           <Tabs items={tabItems} value={tab} onChange={(v) => setTab(v as Tab)} />
-          {tab === 'vendors' ? (
-            <Select
-              value={vendorStatus}
-              onChange={(e) => {
-                setVendorStatus(e.target.value as SettlementStatus | 'all');
-                setVendorPage(1);
-              }}
-            >
-              <option value="all">All statuses</option>
-              {SETTLEMENT_STATUSES.map((s) => (
-                <option key={s} value={s} className="capitalize">
-                  {s}
-                </option>
-              ))}
-            </Select>
-          ) : (
+          {tab === 'drivers' && (
             <Select
               value={driverStatus}
               onChange={(e) => {
-                setDriverStatus(e.target.value as SettlementStatus | 'all');
+                setDriverStatus(e.target.value as DriverPayoutSummary['status'] | 'all');
                 setDriverPage(1);
               }}
             >
               <option value="all">All statuses</option>
-              {SETTLEMENT_STATUSES.map((s) => (
-                <option key={s} value={s}>
+              {DRIVER_STATUSES.map((s) => (
+                <option key={s} value={s} className="capitalize">
                   {s}
                 </option>
               ))}
@@ -140,44 +147,43 @@ export function Settlements() {
           )}
         </div>
 
-        {tab === 'vendors' ? (
+        {loading ? (
+          <div className="px-5 py-10 text-center text-sm text-ink-400">Loading…</div>
+        ) : loadError ? (
+          <div className="px-5 py-10 text-center text-sm text-danger">{loadError}</div>
+        ) : tab === 'vendors' ? (
           vendorPageItems.length === 0 ? (
-            <EmptyState icon={<Store size={24} />} title="No settlements found" description="Try a different status filter." />
+            <EmptyState icon={<Store size={24} />} title="No settlements found" description="Settlements appear once orders are delivered." />
           ) : (
             <>
               <Table>
                 <Thead>
                   <Tr>
                     <Th>Vendor</Th>
-                    <Th>Period</Th>
+                    <Th>Order</Th>
+                    <Th>Date</Th>
                     <Th className="text-right">Gross sales</Th>
                     <Th className="text-right">Commission</Th>
-                    <Th className="text-right">Adjustments</Th>
+                    <Th className="text-right">GST on commission</Th>
                     <Th className="text-right">Net payout</Th>
-                    <Th>Status</Th>
-                    <Th>Due date</Th>
-                    <Th>Reference</Th>
                   </Tr>
                 </Thead>
                 <tbody>
                   {vendorPageItems.map((s) => (
                     <Tr key={s.id}>
-                      <Td className="font-semibold text-ink-800">{s.vendorName}</Td>
-                      <Td className="whitespace-nowrap text-ink-500">{s.periodLabel}</Td>
-                      <Td className="text-right">{formatCurrency(s.grossSales)}</Td>
-                      <Td className="text-right">
-                        {s.commissionRate}% · {formatCurrency(s.commission)}
-                      </Td>
-                      <Td className={`text-right ${s.adjustments < 0 ? 'text-danger' : s.adjustments > 0 ? 'text-success' : 'text-ink-400'}`}>
-                        {s.adjustments > 0 ? '+' : ''}
-                        {formatCurrency(s.adjustments)}
-                      </Td>
-                      <Td className="text-right font-semibold text-ink-900">{formatCurrency(s.netPayout)}</Td>
+                      <Td className="font-semibold text-ink-800">{s.vendorName ?? 'Unknown vendor'}</Td>
                       <Td>
-                        <StatusBadge status={s.status} />
+                        <Link to={`/orders/${s.orderId}`} className="font-medium text-brand-700 hover:underline">
+                          {s.orderNumber}
+                        </Link>
                       </Td>
-                      <Td className="whitespace-nowrap text-ink-500">{formatDate(s.dueDate)}</Td>
-                      <Td className="whitespace-nowrap font-mono text-xs text-ink-500">{s.transactionRef ?? '—'}</Td>
+                      <Td className="whitespace-nowrap text-ink-500">{formatDate(s.settledAt)}</Td>
+                      <Td className="text-right">{formatCurrency(s.grossAmount)}</Td>
+                      <Td className="text-right">
+                        {s.commissionRate}% · {formatCurrency(s.commissionAmount)}
+                      </Td>
+                      <Td className="text-right">{formatCurrency(s.gstOnCommission)}</Td>
+                      <Td className="text-right font-semibold text-ink-900">{formatCurrency(s.netPayout)}</Td>
                     </Tr>
                   ))}
                 </tbody>
@@ -186,7 +192,7 @@ export function Settlements() {
                 page={currentVendorPage}
                 pageCount={vendorPageCount}
                 onChange={setVendorPage}
-                total={filteredVendors.length}
+                total={vendorSettlements.length}
                 pageSize={PAGE_SIZE}
               />
             </>
@@ -199,28 +205,28 @@ export function Settlements() {
               <Thead>
                 <Tr>
                   <Th>Driver</Th>
-                  <Th>Period</Th>
                   <Th className="text-right">Deliveries</Th>
-                  <Th className="text-right">Base earnings</Th>
-                  <Th className="text-right">Incentives</Th>
-                  <Th className="text-right">Total payout</Th>
+                  <Th className="text-right">Pending</Th>
+                  <Th className="text-right">Settled</Th>
+                  <Th className="text-right">Paid</Th>
+                  <Th className="text-right">Total earnings</Th>
                   <Th>Status</Th>
-                  <Th>Due date</Th>
+                  <Th>Updated</Th>
                 </Tr>
               </Thead>
               <tbody>
                 {driverPageItems.map((p) => (
-                  <Tr key={p.id}>
+                  <Tr key={p.driverId}>
                     <Td className="font-semibold text-ink-800">{p.driverName}</Td>
-                    <Td className="whitespace-nowrap text-ink-500">{p.periodLabel}</Td>
                     <Td className="text-right">{p.deliveries}</Td>
-                    <Td className="text-right">{formatCurrency(p.baseEarnings)}</Td>
-                    <Td className="text-right">{formatCurrency(p.incentives)}</Td>
-                    <Td className="text-right font-semibold text-ink-900">{formatCurrency(p.totalPayout)}</Td>
+                    <Td className="text-right">{formatCurrency(p.pendingAmount)}</Td>
+                    <Td className="text-right">{formatCurrency(p.settledAmount)}</Td>
+                    <Td className="text-right">{formatCurrency(p.paidAmount)}</Td>
+                    <Td className="text-right font-semibold text-ink-900">{formatCurrency(p.totalEarnings)}</Td>
                     <Td>
                       <StatusBadge status={p.status} />
                     </Td>
-                    <Td className="whitespace-nowrap text-ink-500">{formatDate(p.dueDate)}</Td>
+                    <Td className="whitespace-nowrap text-ink-500">{formatDate(p.updatedAt)}</Td>
                   </Tr>
                 ))}
               </tbody>

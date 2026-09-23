@@ -1,9 +1,10 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
 import {Button, Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'HandOverOrder'>;
 
@@ -16,13 +17,32 @@ const CHECKLIST = [
 
 export function HandOverOrderScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
+
+  const customerName = order?.address.contactName ?? 'Customer';
+  const addressLine = order ? [order.address.line1, order.address.line2].filter(Boolean).join(', ') : null;
+  const itemCount = order?.items.reduce((sum, it) => sum + it.quantity, 0) ?? 0;
+  const itemNames = order?.items.map(it => it.name).join(', ') ?? '';
 
   return (
     <Screen backgroundColor={colors.primary} statusBarStyle="light-content" edges={['top', 'bottom']}>
       <View style={styles.header}>
         <Icon name="package" size={36} color={colors.white} />
         <Text style={styles.headerTitle}>Hand Over to Customer</Text>
-        <Text style={styles.headerSubtitle}>Priya Mehta · Apt 4B, Tower C</Text>
+        <Text style={styles.headerSubtitle}>{[customerName, addressLine].filter(Boolean).join(' · ')}</Text>
       </View>
 
       <ScrollView style={styles.flex} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
@@ -38,15 +58,14 @@ export function HandOverOrderScreen({route, navigation}: Props) {
           ))}
         </View>
 
-        <View style={styles.card}>
-          <View style={styles.itemsHeaderRow}>
-            <Text style={styles.itemsTitle}>1 package · 3 items</Text>
-            <View style={styles.fragileTag}>
-              <Text style={styles.fragileTagText}>Handle gently</Text>
+        {!!order && (
+          <View style={styles.card}>
+            <View style={styles.itemsHeaderRow}>
+              <Text style={styles.itemsTitle}>{`1 package · ${itemCount} item${itemCount === 1 ? '' : 's'}`}</Text>
             </View>
+            {!!itemNames && <Text style={styles.itemsList}>{itemNames}</Text>}
           </View>
-          <Text style={styles.itemsList}>Almonds 500g, Greek Yogurt, Oats 1kg</Text>
-        </View>
+        )}
 
         <TouchableOpacity style={styles.photoRow} activeOpacity={0.85}>
           <View style={styles.photoIcon}>
@@ -84,8 +103,6 @@ const styles = StyleSheet.create({
   checklistLabelDone: {color: colors.textSecondary, textDecorationLine: 'line-through'},
   itemsHeaderRow: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
   itemsTitle: {...typography.bodySemibold, fontSize: 14, color: colors.textPrimary},
-  fragileTag: {backgroundColor: colors.dangerSurface, borderWidth: 1, borderColor: colors.dangerBorder, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 3},
-  fragileTagText: {...typography.captionSemibold, fontSize: 11, color: colors.danger},
   itemsList: {...typography.label, color: colors.textSecondary, marginTop: spacing.sm},
   photoRow: {flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.lg},
   photoIcon: {width: 44, height: 44, borderRadius: radius.md, backgroundColor: colors.background, borderWidth: 1.5, borderColor: colors.border, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center'},

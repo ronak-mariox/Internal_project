@@ -97,7 +97,7 @@ export function StoreSetupCompleteScreen({ navigation }: Props) {
               label="Add First Product"
               variant="outline"
               disabled={finalizing}
-              onPress={() => Alert.alert('Add First Product', 'Coming soon.')}
+              onPress={() => navigation.navigate('AddProduct')}
             />
           </View>
         </View>

@@ -65,6 +65,10 @@ export interface DriverDoc {
   bankDetails?: DriverBankDetailsData;
 
   rejectionReason?: string;
+
+  isOnline: boolean;
+  currentLocation?: { lat: number; lng: number; updatedAt: Date };
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -92,6 +96,9 @@ const driverSchema = new Schema<DriverDoc>(
     bankDetails: { type: Schema.Types.Mixed },
 
     rejectionReason: String,
+
+    isOnline: { type: Boolean, default: false },
+    currentLocation: { type: Schema.Types.Mixed },
   },
   { timestamps: true },
 );

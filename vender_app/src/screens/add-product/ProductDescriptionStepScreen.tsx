@@ -5,29 +5,39 @@ import type { AuthStackParamList } from '../../navigation/types';
 import { AddProductHeader, Button, FormSectionCard, ScreenContainer } from '../../components';
 import { Icon } from '../../icons/Icon';
 import { useProductDraft } from '../../context/ProductDraftContext';
+import { type FormErrors } from '../../utils/validators';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'ProductDescriptionStep'>;
+
+type Errors = FormErrors<'description' | 'features'>;
 
 export function ProductDescriptionStepScreen({ navigation }: Props) {
   const { draft, updateDescription } = useProductDraft();
   const [fullDescription, setFullDescription] = useState(draft.description?.fullDescription ?? '');
   const [features, setFeatures] = useState<string[]>(draft.description?.keyFeatures ?? []);
   const [newFeature, setNewFeature] = useState('');
-  const [error, setError] = useState<string | undefined>();
+  const [errors, setErrors] = useState<Errors>({});
 
   function addFeature() {
     const trimmed = newFeature.trim();
     if (!trimmed) return;
     setFeatures(prev => [...prev, trimmed]);
     setNewFeature('');
+    if (errors.features) setErrors(prev => ({ ...prev, features: undefined }));
   }
 
   function handleContinue() {
+    const nextErrors: Errors = {};
     if (!fullDescription.trim()) {
-      setError('Enter a full description');
-      return;
+      nextErrors.description = 'Enter a full description';
     }
+    if (features.length === 0) {
+      nextErrors.features = 'Add at least one key feature';
+    }
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+
     updateDescription({ fullDescription: fullDescription.trim(), keyFeatures: features });
     navigation.navigate('PackSizeVariant');
   }
@@ -47,12 +57,12 @@ export function ProductDescriptionStepScreen({ navigation }: Props) {
               <Text style={styles.label}>Full Description</Text>
               <Text style={styles.required}> *</Text>
             </View>
-            <View style={[styles.textarea, error && styles.textareaError]}>
+            <View style={[styles.textarea, errors.description && styles.textareaError]}>
               <TextInput
                 value={fullDescription}
                 onChangeText={text => {
                   if (text.length <= 2000) setFullDescription(text);
-                  if (error) setError(undefined);
+                  if (errors.description) setErrors(prev => ({ ...prev, description: undefined }));
                 }}
                 placeholder="Describe features, benefits, and usage"
                 placeholderTextColor={colors.textTertiary}
@@ -61,8 +71,8 @@ export function ProductDescriptionStepScreen({ navigation }: Props) {
               />
             </View>
             <View style={styles.textareaFooter}>
-              <Text style={error ? styles.errorText : styles.helperText}>
-                {error ?? 'Tip: Include features, benefits, usage'}
+              <Text style={errors.description ? styles.errorText : styles.helperText}>
+                {errors.description ?? 'Tip: Include features, benefits, usage'}
               </Text>
               <Text style={styles.counterText}>{fullDescription.length} / 2000</Text>
             </View>
@@ -98,6 +108,7 @@ export function ProductDescriptionStepScreen({ navigation }: Props) {
                 <Text style={styles.addFeatureButtonText}>Add</Text>
               </Pressable>
             </View>
+            {errors.features ? <Text style={styles.errorText}>{errors.features}</Text> : null}
           </View>
         </FormSectionCard>
 

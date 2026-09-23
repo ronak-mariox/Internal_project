@@ -1,10 +1,16 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../navigation/types';
 import { Button, InfoBanner, NavHeader, ProgressSteps, ScreenContainer } from '../../components';
 import { Icon, IconName } from '../../icons/Icon';
-import { useStoreSetup, type StoreStatusValue } from '../../context/StoreSetupContext';
+import {
+  useStoreSetup,
+  type DaySchedule,
+  type HolidayClosureItem,
+  type OperatingHoursData,
+  type StoreStatusValue,
+} from '../../context/StoreSetupContext';
 import { api, getApiErrorMessage } from '../../services/api';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
@@ -21,11 +27,87 @@ const OPTIONS: { value: StoreStatusValue; icon: IconName; title: string; subtitl
   },
 ];
 
+const JS_DAY_TO_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const SHORT_TO_LONG_DAY: Record<string, string> = {
+  Mon: 'Monday',
+  Tue: 'Tuesday',
+  Wed: 'Wednesday',
+  Thu: 'Thursday',
+  Fri: 'Friday',
+  Sat: 'Saturday',
+  Sun: 'Sunday',
+};
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function parseHolidayDate(display: string): Date | null {
+  const parts = display.trim().split(' ');
+  if (parts.length !== 3) return null;
+  const day = parseInt(parts[0], 10);
+  const monthIndex = MONTH_ABBR.indexOf(parts[1]);
+  const year = parseInt(parts[2], 10);
+  if (!Number.isInteger(day) || monthIndex === -1 || !Number.isInteger(year)) return null;
+  return new Date(year, monthIndex, day);
+}
+
+function isSameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function findActiveHoliday(holidays: HolidayClosureItem[], today: Date): HolidayClosureItem | undefined {
+  return holidays.find(holiday => {
+    const start = parseHolidayDate(holiday.date);
+    if (!start) return false;
+    for (let offset = 0; offset < holiday.daysClosed; offset += 1) {
+      const day = new Date(start);
+      day.setDate(start.getDate() + offset);
+      if (isSameDay(day, today)) return true;
+    }
+    return false;
+  });
+}
+
+function findNextClosedDay(weeklySchedule: DaySchedule[], todayIndex: number): DaySchedule | undefined {
+  for (let offset = 1; offset <= 7; offset += 1) {
+    const shortDay = JS_DAY_TO_SHORT[(todayIndex + offset) % 7];
+    const entry = weeklySchedule.find(item => item.day === shortDay);
+    if (entry && !entry.isOpen) return entry;
+  }
+  return undefined;
+}
+
+type ScheduleSummary = { title: string; subtitle?: string; isOpen?: boolean };
+
+function getTodaysScheduleSummary(
+  operatingHours: OperatingHoursData | undefined,
+  holidays: HolidayClosureItem[],
+): ScheduleSummary {
+  const today = new Date();
+  const activeHoliday = findActiveHoliday(holidays, today);
+  if (activeHoliday) {
+    return { title: `Closed today: ${activeHoliday.title}`, subtitle: activeHoliday.note, isOpen: false };
+  }
+  if (!operatingHours) {
+    return { title: 'Set your operating hours to see today’s schedule here' };
+  }
+  const todayShort = JS_DAY_TO_SHORT[today.getDay()];
+  const todayEntry = operatingHours.weeklySchedule.find(item => item.day === todayShort);
+  const nextClosed = findNextClosedDay(operatingHours.weeklySchedule, today.getDay());
+  const subtitle = nextClosed ? `Next: Closed ${SHORT_TO_LONG_DAY[nextClosed.day] ?? nextClosed.day}` : undefined;
+  if (!todayEntry || !todayEntry.isOpen) {
+    return { title: 'Closed today', subtitle, isOpen: false };
+  }
+  return { title: `Open today: ${todayEntry.open} – ${todayEntry.close}`, subtitle, isOpen: true };
+}
+
 export function StoreStatusScreen({ navigation }: Props) {
   const { data, setStoreStatus } = useStoreSetup();
   const [selected, setSelected] = useState<StoreStatusValue>(data.storeStatus);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  const schedule = useMemo(
+    () => getTodaysScheduleSummary(data.operatingHours, data.holidays),
+    [data.operatingHours, data.holidays],
+  );
 
   function handleSelect(value: StoreStatusValue) {
     setSelected(value);
@@ -90,10 +172,10 @@ export function StoreStatusScreen({ navigation }: Props) {
         <View style={styles.scheduleCard}>
           <Text style={styles.sectionTitle}>Today's Schedule</Text>
           <View style={styles.scheduleRow}>
-            <View style={styles.scheduleDot} />
+            <View style={[styles.scheduleDot, schedule.isOpen === false && styles.scheduleDotClosed]} />
             <View>
-              <Text style={styles.scheduleTitle}>Open today: 9:00 AM – 9:00 PM</Text>
-              <Text style={styles.scheduleSubtitle}>Next: Closed Sunday</Text>
+              <Text style={styles.scheduleTitle}>{schedule.title}</Text>
+              {schedule.subtitle ? <Text style={styles.scheduleSubtitle}>{schedule.subtitle}</Text> : null}
             </View>
           </View>
         </View>
@@ -210,6 +292,9 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 9999,
     backgroundColor: colors.primary,
+  },
+  scheduleDotClosed: {
+    backgroundColor: colors.error,
   },
   scheduleTitle: {
     ...typography.bodySemibold,

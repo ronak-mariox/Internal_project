@@ -1,103 +1,73 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
-import {Button, Icon, IconBackButton, Screen} from '../../components';
+import {Button, Icon, IconBackButton, IconName, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryIssueType, DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'SelectIssueReason'>;
 
-const REASONS = [
-  'Did not answer calls',
-  'Phone switched off',
-  'Wrong contact number',
-  'Customer refused delivery',
-  'Customer unavailable at address',
-  'Customer asked to cancel',
+const REASONS: {type: DeliveryIssueType; label: string; subtitle: string; icon: IconName}[] = [
+  {type: 'wrong_address', label: 'Wrong address', subtitle: 'Delivery location does not match the order', icon: 'map-pin'},
+  {type: 'package_damage', label: 'Package damaged', subtitle: 'Item packaging is torn or broken', icon: 'package'},
+  {type: 'vehicle_problem', label: 'Vehicle problem', subtitle: 'Flat tyre, breakdown, or accident', icon: 'alert-triangle'},
+  {type: 'road_blockage', label: 'Road blockage', subtitle: 'Cannot reach the location by road', icon: 'navigation'},
+  {type: 'safety_concern', label: 'Safety concern', subtitle: 'You feel unsafe continuing this delivery', icon: 'shield'},
+  {type: 'delivery_failed', label: 'Other — cannot complete', subtitle: 'Any other reason this delivery cannot be finished', icon: 'x-circle'},
 ];
 
 export function SelectIssueReasonScreen({route, navigation}: Props) {
   const {orderId} = route.params;
-  const [selected, setSelected] = useState(REASONS[0]);
-  const [priority, setPriority] = useState<'low' | 'high'>('high');
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+  const [selected, setSelected] = useState<DeliveryIssueType | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId).then((o) => { if (!cancelled) setOrder(o); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [orderId, getOrder]);
 
   return (
     <Screen edges={['top', 'bottom']}>
       <View style={styles.header}>
         <IconBackButton onPress={() => navigation.goBack()} />
         <View style={styles.headerText}>
-          <Text style={styles.headerTitle}>Select Reason</Text>
-          <Text style={styles.headerSubtitle}>Delivery Issue · Order #{orderId}</Text>
+          <Text style={styles.headerTitle}>What's the issue?</Text>
+          <Text style={styles.headerSubtitle}>{`Order #${order?.orderNumber ?? orderId}`}</Text>
         </View>
       </View>
 
       <ScrollView style={styles.flex} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-        <Text style={styles.fieldLabel}>Main reason</Text>
-        <View style={styles.mainReasonChip}>
-          <Text style={styles.mainReasonText}>Customer Unreachable</Text>
-          <Icon name="x" size={16} color={colors.primary} />
-        </View>
-
-        <Text style={styles.sectionLabel}>Specific reason</Text>
-        <View style={styles.reasonsList}>
-          {REASONS.map(reason => {
-            const isSelected = reason === selected;
-            return (
-              <TouchableOpacity
-                key={reason}
-                style={[styles.reasonRow, isSelected && styles.reasonRowSelected]}
-                activeOpacity={0.8}
-                onPress={() => setSelected(reason)}>
-                <View style={[styles.radio, isSelected && styles.radioSelected]}>
-                  {isSelected && <View style={styles.radioDot} />}
-                </View>
-                <Text style={styles.reasonText}>{reason}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        <Text style={styles.sectionLabel}>Escalation level</Text>
-        <View style={styles.priorityRow}>
-          <TouchableOpacity
-            style={[styles.priorityPill, priority === 'low' && styles.priorityPillActive]}
-            activeOpacity={0.8}
-            onPress={() => setPriority('low')}>
-            <View style={[styles.priorityDot, priority === 'low' && styles.priorityDotActive]} />
-            <Text style={[styles.priorityText, priority === 'low' && styles.priorityTextActive]}>Low Priority</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.priorityPill, priority === 'high' && styles.priorityPillActive]}
-            activeOpacity={0.8}
-            onPress={() => setPriority('high')}>
-            <View style={[styles.priorityDot, priority === 'high' && styles.priorityDotActive]} />
-            <Text style={[styles.priorityText, priority === 'high' && styles.priorityTextActive]}>High Priority</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.impactCard}>
-          <Text style={styles.impactLabel}>IMPACT PREVIEW</Text>
-          <View style={styles.impactRow}>
-            <Text style={styles.impactRowLabel}>Earnings</Text>
-            <Text style={styles.impactRowValueGreen}>₹40 guaranteed</Text>
-          </View>
-          <View style={styles.impactRow}>
-            <Text style={styles.impactRowLabel}>Order</Text>
-            <Text style={styles.impactRowValue}>Reassigned or returned</Text>
-          </View>
-          <View style={styles.impactRow}>
-            <Text style={styles.impactRowLabel}>Your rating</Text>
-            <Text style={styles.impactRowValueGreen}>Not affected</Text>
-          </View>
-        </View>
-
-        <Button
-          label="Confirm Reason"
-          icon="arrow-right"
-          iconPosition="right"
-          onPress={() => navigation.navigate('UploadEvidence', {orderId})}
-        />
+        {REASONS.map((reason) => {
+          const active = selected === reason.type;
+          return (
+            <TouchableOpacity
+              key={reason.type}
+              style={[styles.optionRow, active && styles.optionRowActive]}
+              activeOpacity={0.85}
+              onPress={() => setSelected(reason.type)}>
+              <View style={[styles.optionIcon, active && styles.optionIconActive]}>
+                <Icon name={reason.icon} size={20} color={active ? colors.primary : colors.textSecondary} />
+              </View>
+              <View style={styles.optionText}>
+                <Text style={styles.optionTitle}>{reason.label}</Text>
+                <Text style={styles.optionSubtitle}>{reason.subtitle}</Text>
+              </View>
+              {active && <Icon name="check-circle" size={20} color={colors.primary} />}
+            </TouchableOpacity>
+          );
+        })}
       </ScrollView>
+
+      <View style={styles.footer}>
+        <Button
+          label="Continue"
+          disabled={!selected}
+          onPress={() => selected && navigation.navigate('UploadEvidence', {orderId, issueType: selected})}
+        />
+      </View>
     </Screen>
   );
 }
@@ -118,29 +88,13 @@ const styles = StyleSheet.create({
   headerTitle: {...typography.title, fontSize: 17, color: colors.textPrimary},
   headerSubtitle: {...typography.caption, color: colors.textSecondary},
   flex: {flex: 1},
-  body: {padding: spacing.lg, gap: spacing.md},
-  fieldLabel: {...typography.label, color: colors.textSecondary},
-  mainReasonChip: {flexDirection: 'row', alignSelf: 'flex-start', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.primarySurface, borderWidth: 1.5, borderColor: colors.primary, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: spacing.sm},
-  mainReasonText: {...typography.bodySemibold, fontSize: 14, color: colors.primaryDark},
-  sectionLabel: {...typography.bodySemibold, fontSize: 14, color: colors.textPrimary},
-  reasonsList: {gap: spacing.sm},
-  reasonRow: {flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.surface, borderWidth: 2, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.md},
-  reasonRowSelected: {borderColor: colors.primary, backgroundColor: colors.primarySurfaceAlt},
-  radio: {width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: colors.border, alignItems: 'center', justifyContent: 'center'},
-  radioSelected: {borderColor: colors.primary},
-  radioDot: {width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary},
-  reasonText: {...typography.bodyMedium, fontSize: 14, color: colors.textPrimary},
-  priorityRow: {flexDirection: 'row', gap: spacing.sm},
-  priorityPill: {flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.pill, paddingVertical: spacing.sm},
-  priorityPillActive: {backgroundColor: colors.dark900, borderColor: colors.dark900},
-  priorityDot: {width: 12, height: 12, borderRadius: 3, borderWidth: 2, borderColor: colors.textSecondary},
-  priorityDotActive: {borderColor: colors.white, backgroundColor: colors.white},
-  priorityText: {...typography.bodyMedium, fontSize: 14, color: colors.textSecondary},
-  priorityTextActive: {color: colors.white},
-  impactCard: {backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.lg},
-  impactLabel: {...typography.captionSemibold, fontSize: 13, color: colors.textSecondary, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: spacing.sm},
-  impactRow: {flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4},
-  impactRowLabel: {...typography.label, color: colors.textSecondary},
-  impactRowValue: {...typography.bodyMedium, fontSize: 13, color: colors.textPrimary},
-  impactRowValueGreen: {...typography.labelSemibold, fontSize: 13, color: colors.primary},
+  body: {padding: spacing.lg, gap: spacing.sm},
+  optionRow: {flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.md},
+  optionRowActive: {borderColor: colors.primary, backgroundColor: colors.primarySurface},
+  optionIcon: {width: 40, height: 40, borderRadius: radius.md, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center'},
+  optionIconActive: {backgroundColor: colors.white},
+  optionText: {flex: 1},
+  optionTitle: {...typography.bodySemibold, fontSize: 14, color: colors.textPrimary},
+  optionSubtitle: {...typography.caption, fontSize: 12, color: colors.textSecondary, marginTop: 1},
+  footer: {padding: spacing.lg, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border},
 });

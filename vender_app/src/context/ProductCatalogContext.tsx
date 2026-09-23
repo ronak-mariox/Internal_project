@@ -48,11 +48,24 @@ export type Product = {
   updatedAt?: number;
 };
 
+/**
+ * Determines what unit/variant input the add-product flow shows for a category —
+ * weight_volume for grocery-style g/kg/ml, attribute for discrete options like
+ * clothing sizes or storage capacities. Configured admin-side per category.
+ */
+export type CategoryVariantConfig = {
+  kind: 'weight_volume' | 'attribute';
+  label: string;
+  units?: string[];
+  options?: string[];
+};
+
 /** A category as returned by `GET /vendor/categories`. */
 export type VendorCategory = {
   id: string;
   name: string;
-  subcategories: { id: string; name: string }[];
+  subcategories: { id: string; name: string; variantConfig?: CategoryVariantConfig }[];
+  variantConfig?: CategoryVariantConfig;
 };
 
 // ---------------------------------------------------------------------------
@@ -67,7 +80,14 @@ type ApiCategory = {
   sortOrder: number;
   isActive: boolean;
   showOnHome: boolean;
-  subcategories: { id: string; name: string; imageUrl?: string; isActive: boolean }[];
+  subcategories: {
+    id: string;
+    name: string;
+    imageUrl?: string;
+    isActive: boolean;
+    variantConfig?: CategoryVariantConfig;
+  }[];
+  variantConfig?: CategoryVariantConfig;
 };
 
 type ApiVariant = {
@@ -285,7 +305,12 @@ export function ProductCatalogProvider({ children }: { children: React.ReactNode
       rawCategories.map(category => ({
         id: category.id,
         name: category.name,
-        subcategories: category.subcategories.map(sub => ({ id: sub.id, name: sub.name })),
+        subcategories: category.subcategories.map(sub => ({
+          id: sub.id,
+          name: sub.name,
+          variantConfig: sub.variantConfig,
+        })),
+        variantConfig: category.variantConfig,
       })),
     [rawCategories],
   );

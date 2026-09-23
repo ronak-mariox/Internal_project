@@ -1,14 +1,31 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
-import {Icon, ProgressBar, Screen} from '../../components';
+import {Icon, Screen} from '../../components';
 import {colors, radius, spacing, typography} from '../../theme';
+import {DeliveryOrder, useOrders} from '../../context/OrdersContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'OrderNotReady'>;
 
 export function OrderNotReadyScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const {getOrder} = useOrders();
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrder(orderId)
+      .then((o) => {
+        if (!cancelled) setOrder(o);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, getOrder]);
+
+  const storeName = order?.pickup.name ?? 'The store';
 
   return (
     <Screen edges={['top', 'bottom']} contentContainerStyle={styles.container}>
@@ -16,19 +33,7 @@ export function OrderNotReadyScreen({route, navigation}: Props) {
         <Icon name="alert-triangle" size={32} color={colors.warning} />
       </View>
       <Text style={styles.title}>Order Not Ready</Text>
-      <Text style={styles.subtitle}>Swiggy Instamart needs more time to prepare your order.</Text>
-
-      <View style={styles.card}>
-        <Text style={styles.cardLabel}>WAIT ESTIMATE</Text>
-        <View style={styles.estimateRow}>
-          <Text style={styles.estimateLabel}>Preparation time</Text>
-          <Text style={styles.estimateValue}>~12 minutes</Text>
-        </View>
-        <ProgressBar progress={0.4} height={8} trackColor={colors.border} fillColor={colors.warning} style={styles.progressBar} />
-        <Text style={styles.readyByText}>
-          Estimated ready by <Text style={styles.readyByValue}>2:41 PM</Text>
-        </Text>
-      </View>
+      <Text style={styles.subtitle}>{storeName} needs more time to prepare your order.</Text>
 
       <View style={styles.tilesRow}>
         <TouchableOpacity
@@ -72,14 +77,6 @@ const styles = StyleSheet.create({
   iconWrap: {width: 72, height: 72, borderRadius: 36, backgroundColor: colors.warningSurface, borderWidth: 2, borderColor: colors.warningBorder, alignItems: 'center', justifyContent: 'center'},
   title: {...typography.h4, fontSize: 22, color: colors.textPrimary},
   subtitle: {...typography.body, color: colors.textSecondary, textAlign: 'center', marginTop: -spacing.xs},
-  card: {width: '100%', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.xxl, padding: spacing.lg},
-  cardLabel: {...typography.overline, color: colors.textSecondary, letterSpacing: 0.8, marginBottom: spacing.sm},
-  estimateRow: {flexDirection: 'row', justifyContent: 'space-between'},
-  estimateLabel: {...typography.body, color: colors.textPrimary},
-  estimateValue: {...typography.bodyBold, color: colors.warning},
-  progressBar: {marginTop: spacing.sm},
-  readyByText: {...typography.label, color: colors.textSecondary, marginTop: spacing.sm},
-  readyByValue: {...typography.labelSemibold, color: colors.textPrimary},
   tilesRow: {flexDirection: 'row', gap: spacing.sm, width: '100%'},
   tile: {flex: 1, alignItems: 'center', gap: spacing.xs, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.xl, padding: spacing.md},
   tileTitle: {...typography.bodySemibold, fontSize: 13, color: colors.textPrimary},

@@ -57,6 +57,7 @@ import { StoreLocationConfirmScreen } from '../screens/store-setup/StoreLocation
 import { OperatingHoursScreen } from '../screens/store-setup/OperatingHoursScreen';
 import { WeeklyScheduleScreen } from '../screens/store-setup/WeeklyScheduleScreen';
 import { HolidayClosureScreen } from '../screens/store-setup/HolidayClosureScreen';
+import { HolidayFormScreen } from '../screens/store-setup/HolidayFormScreen';
 import { DeliverySettingsScreen } from '../screens/store-setup/DeliverySettingsScreen';
 import { ServiceAvailabilityScreen } from '../screens/store-setup/ServiceAvailabilityScreen';
 import { StoreStatusScreen } from '../screens/store-setup/StoreStatusScreen';
@@ -268,12 +269,16 @@ import { DisputeResolvedScreen } from '../screens/disputes/DisputeResolvedScreen
 
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { ProfileVendorInfoScreen } from '../screens/profile/ProfileVendorInfoScreen';
+import { ProfileEditVendorInfoScreen } from '../screens/profile/ProfileEditVendorInfoScreen';
 import { ProfileOwnerInfoScreen } from '../screens/profile/ProfileOwnerInfoScreen';
+import { ProfileEditOwnerInfoScreen } from '../screens/profile/ProfileEditOwnerInfoScreen';
 import { ProfileStoreInfoScreen } from '../screens/profile/ProfileStoreInfoScreen';
-import { EditProfileScreen } from '../screens/profile/EditProfileScreen';
+import { ProfileEditStoreInfoScreen } from '../screens/profile/ProfileEditStoreInfoScreen';
 import { ProfileAddressesScreen } from '../screens/profile/ProfileAddressesScreen';
+import { ProfileAddAddressScreen } from '../screens/profile/ProfileAddAddressScreen';
 import { ProfileAddressDetailsScreen } from '../screens/profile/ProfileAddressDetailsScreen';
 import { ProfileDocumentsScreen } from '../screens/profile/ProfileDocumentsScreen';
+import { ProfileAddDocumentScreen } from '../screens/profile/ProfileAddDocumentScreen';
 import { ProfileDocumentStatusScreen } from '../screens/profile/ProfileDocumentStatusScreen';
 import { ProfileReplaceDocumentScreen } from '../screens/profile/ProfileReplaceDocumentScreen';
 import { ProfileBankDetailsScreen } from '../screens/profile/ProfileBankDetailsScreen';
@@ -376,6 +381,7 @@ export function RootNavigator() {
           <Stack.Screen name="OperatingHours" component={OperatingHoursScreen} />
           <Stack.Screen name="WeeklySchedule" component={WeeklyScheduleScreen} />
           <Stack.Screen name="HolidayClosure" component={HolidayClosureScreen} />
+          <Stack.Screen name="HolidayForm" component={HolidayFormScreen} />
           <Stack.Screen name="DeliverySettings" component={DeliverySettingsScreen} />
           <Stack.Screen name="ServiceAvailability" component={ServiceAvailabilityScreen} />
           <Stack.Screen name="StoreStatus" component={StoreStatusScreen} />
@@ -724,12 +730,16 @@ export function RootNavigator() {
 
           <Stack.Screen name="Profile" component={ProfileScreen} />
           <Stack.Screen name="ProfileVendorInfo" component={ProfileVendorInfoScreen} />
+          <Stack.Screen name="ProfileEditVendorInfo" component={ProfileEditVendorInfoScreen} />
           <Stack.Screen name="ProfileOwnerInfo" component={ProfileOwnerInfoScreen} />
+          <Stack.Screen name="ProfileEditOwnerInfo" component={ProfileEditOwnerInfoScreen} />
           <Stack.Screen name="ProfileStoreInfo" component={ProfileStoreInfoScreen} />
-          <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+          <Stack.Screen name="ProfileEditStoreInfo" component={ProfileEditStoreInfoScreen} />
           <Stack.Screen name="ProfileAddresses" component={ProfileAddressesScreen} />
+          <Stack.Screen name="ProfileAddAddress" component={ProfileAddAddressScreen} />
           <Stack.Screen name="ProfileAddressDetails" component={ProfileAddressDetailsScreen} />
           <Stack.Screen name="ProfileDocuments" component={ProfileDocumentsScreen} />
+          <Stack.Screen name="ProfileAddDocument" component={ProfileAddDocumentScreen} />
           <Stack.Screen name="ProfileDocumentStatus" component={ProfileDocumentStatusScreen} />
           <Stack.Screen name="ProfileReplaceDocument" component={ProfileReplaceDocumentScreen} />
           <Stack.Screen name="ProfileBankDetails" component={ProfileBankDetailsScreen} />

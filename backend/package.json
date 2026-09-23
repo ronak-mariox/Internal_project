@@ -9,7 +9,9 @@
     "start": "node dist/index.js",
     "seed": "tsx scripts/seed.ts",
     "seed:catalog": "tsx scripts/seedCatalog.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "seed:delivery": "tsx scripts/seedDelivery.ts",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test:e2e": "tsx scripts/e2eOrderLifecycle.ts"
   },
   "keywords": [],
   "author": "",

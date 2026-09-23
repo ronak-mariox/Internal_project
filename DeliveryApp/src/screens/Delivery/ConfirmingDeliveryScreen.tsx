@@ -1,4 +1,4 @@
-import React, {useEffect} from 'react';
+import React, {useEffect, useState} from 'react';
 import {StyleSheet, Text, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../navigation/types';
@@ -16,6 +16,7 @@ const STEPS = [
 
 export function ConfirmingDeliveryScreen({route, navigation}: Props) {
   const {orderId} = route.params;
+  const [confirmedAt] = useState(() => new Date());
 
   useEffect(() => {
     const timer = setTimeout(() => navigation.replace('DeliverySuccess', {orderId}), 1800);
@@ -28,7 +29,7 @@ export function ConfirmingDeliveryScreen({route, navigation}: Props) {
         <Icon name="refresh" size={40} color={colors.primary} />
       </View>
       <Text style={styles.title}>Confirming Delivery…</Text>
-      <Text style={styles.subtitle}>Logging delivery at 3:04 PM</Text>
+      <Text style={styles.subtitle}>{`Logging delivery at ${confirmedAt.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}`}</Text>
 
       <View style={styles.card}>
         {STEPS.map((step, index) => (

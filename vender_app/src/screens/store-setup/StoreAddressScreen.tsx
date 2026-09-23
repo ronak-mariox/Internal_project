@@ -7,9 +7,14 @@ import { Icon } from '../../icons/Icon';
 import { useStoreSetup, type StoreAddressData } from '../../context/StoreSetupContext';
 import { useRegistration } from '../../context/RegistrationContext';
 import { api, getApiErrorMessage } from '../../services/api';
+import { isRequired, isValidMobile, isValidPincode, type FormErrors } from '../../utils/validators';
 import { colors, fontFamilies, radii, spacing, typography } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'StoreAddress'>;
+
+type Errors = FormErrors<
+  'buildingShopNo' | 'street' | 'landmark' | 'area' | 'pincode' | 'city' | 'state' | 'contactNumber'
+>;
 
 const DEFAULT_LOCATION: StoreAddressData['location'] = {
   address: 'Plot 42, MG Road',
@@ -36,11 +41,12 @@ export function StoreAddressScreen({ navigation }: Props) {
       location: DEFAULT_LOCATION,
     },
   );
-  const [error, setError] = useState<string | undefined>();
+  const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
 
   function set<K extends keyof StoreAddressData>(key: K, value: StoreAddressData[K]) {
     setForm(prev => ({ ...prev, [key]: value }));
+    if (key in errors) setErrors(prev => ({ ...prev, [key as keyof Errors]: undefined }));
   }
 
   function toggleSameAddress(checked: boolean) {
@@ -54,33 +60,40 @@ export function StoreAddressScreen({ navigation }: Props) {
         city: registrationData.businessInfo!.city,
         state: registrationData.businessInfo!.state,
       }));
+      setErrors(prev => ({
+        ...prev,
+        buildingShopNo: undefined,
+        area: undefined,
+        pincode: undefined,
+        city: undefined,
+        state: undefined,
+      }));
     } else {
       set('sameAsBusinessAddress', checked);
     }
   }
 
   async function handleContinue() {
-    if (
-      !form.buildingShopNo ||
-      !form.street ||
-      !form.landmark ||
-      !form.area ||
-      !form.pincode ||
-      !form.city ||
-      !form.state ||
-      !form.contactNumber
-    ) {
-      setError('Please fill in all required fields');
-      return;
-    }
-    setError(undefined);
+    const contactDigits = form.contactNumber.replace(/[^0-9]/g, '').slice(-10);
+    const nextErrors: Errors = {};
+    if (!isRequired(form.buildingShopNo)) nextErrors.buildingShopNo = 'Required';
+    if (!isRequired(form.street)) nextErrors.street = 'Required';
+    if (!isRequired(form.landmark)) nextErrors.landmark = 'Required';
+    if (!isRequired(form.area)) nextErrors.area = 'Required';
+    if (!isValidPincode(form.pincode)) nextErrors.pincode = 'Enter a valid 6-digit pincode';
+    if (!isRequired(form.city)) nextErrors.city = 'Required';
+    if (!isRequired(form.state)) nextErrors.state = 'Required';
+    if (!isValidMobile(contactDigits)) nextErrors.contactNumber = 'Enter a valid 10-digit contact number';
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+
     setSaving(true);
     try {
       await api.patch('/vendor/store-setup/address', form);
       updateAddress(form);
       navigation.navigate('OperatingHours');
     } catch (err) {
-      setError(getApiErrorMessage(err));
+      setErrors({ form: getApiErrorMessage(err) });
     } finally {
       setSaving(false);
     }
@@ -103,6 +116,7 @@ export function StoreAddressScreen({ navigation }: Props) {
             value={form.buildingShopNo}
             onChangeText={text => set('buildingShopNo', text)}
             placeholder="Plot 42, Ground Floor"
+            error={errors.buildingShopNo}
           />
           <Input
             label="Street / Road"
@@ -110,12 +124,15 @@ export function StoreAddressScreen({ navigation }: Props) {
             value={form.street}
             onChangeText={text => set('street', text)}
             placeholder="MG Road"
+            error={errors.street}
           />
           <Input
             label="Landmark"
+            required
             value={form.landmark}
             onChangeText={text => set('landmark', text)}
             placeholder="Near Dadar Railway Station"
+            error={errors.landmark}
           />
           <View style={styles.row}>
             <View style={styles.rowItem}>
@@ -125,6 +142,7 @@ export function StoreAddressScreen({ navigation }: Props) {
                 value={form.area}
                 onChangeText={text => set('area', text)}
                 placeholder="Dadar West"
+                error={errors.area}
               />
             </View>
             <View style={styles.rowItem}>
@@ -135,19 +153,29 @@ export function StoreAddressScreen({ navigation }: Props) {
                 onChangeText={text => set('pincode', text.replace(/[^0-9]/g, '').slice(0, 6))}
                 placeholder="400028"
                 keyboardType="number-pad"
+                error={errors.pincode}
               />
             </View>
           </View>
           <View style={styles.row}>
             <View style={styles.rowItem}>
-              <Input label="City" value={form.city} onChangeText={text => set('city', text)} placeholder="Mumbai" />
+              <Input
+                label="City"
+                required
+                value={form.city}
+                onChangeText={text => set('city', text)}
+                placeholder="Mumbai"
+                error={errors.city}
+              />
             </View>
             <View style={styles.rowItem}>
               <Input
                 label="State"
+                required
                 value={form.state}
                 onChangeText={text => set('state', text)}
                 placeholder="Maharashtra"
+                error={errors.state}
               />
             </View>
           </View>
@@ -159,6 +187,7 @@ export function StoreAddressScreen({ navigation }: Props) {
             onChangeText={text => set('contactNumber', text)}
             placeholder="+91 22 2654 7890"
             keyboardType="phone-pad"
+            error={errors.contactNumber}
           />
         </FormSectionCard>
 
@@ -181,7 +210,7 @@ export function StoreAddressScreen({ navigation }: Props) {
           <Icon name="chevron-right" size={18} color={colors.primary} />
         </Pressable>
 
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {errors.form ? <Text style={styles.errorText}>{errors.form}</Text> : null}
 
         <View style={styles.footer}>
           <Button label="Save & Continue" onPress={handleContinue} loading={saving} />
